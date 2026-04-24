@@ -4,5 +4,9 @@ import { SettingsPage } from "@/components/shared/SettingsPage";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({ meta: [{ title: "Settings — BizAssist AI" }] }),
-  component: () => (<AppShell><SettingsPage /></AppShell>),
+  component: () => (
+    <AppShell>
+      <SettingsPage />
+    </AppShell>
+  ),
 });

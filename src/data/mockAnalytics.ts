@@ -1,19 +1,37 @@
 export const messagesByHour = [
-  { hour: "8AM", messages: 3 }, { hour: "9AM", messages: 6 }, { hour: "10AM", messages: 8 },
-  { hour: "11AM", messages: 11 }, { hour: "12PM", messages: 5 }, { hour: "1PM", messages: 4 },
-  { hour: "2PM", messages: 7 }, { hour: "3PM", messages: 10 }, { hour: "4PM", messages: 6 },
-  { hour: "5PM", messages: 4 }, { hour: "6PM", messages: 2 }, { hour: "7PM", messages: 1 },
+  { hour: "8AM", messages: 3 },
+  { hour: "9AM", messages: 6 },
+  { hour: "10AM", messages: 8 },
+  { hour: "11AM", messages: 11 },
+  { hour: "12PM", messages: 5 },
+  { hour: "1PM", messages: 4 },
+  { hour: "2PM", messages: 7 },
+  { hour: "3PM", messages: 10 },
+  { hour: "4PM", messages: 6 },
+  { hour: "5PM", messages: 4 },
+  { hour: "6PM", messages: 2 },
+  { hour: "7PM", messages: 1 },
   { hour: "8PM", messages: 0 },
 ];
 
 export const ordersThisWeek = [
-  { day: "Mon", orders: 6 }, { day: "Tue", orders: 8 }, { day: "Wed", orders: 7 },
-  { day: "Thu", orders: 10 }, { day: "Fri", orders: 12 }, { day: "Sat", orders: 14 }, { day: "Sun", orders: 11 },
+  { day: "Mon", orders: 6 },
+  { day: "Tue", orders: 8 },
+  { day: "Wed", orders: 7 },
+  { day: "Thu", orders: 10 },
+  { day: "Fri", orders: 12 },
+  { day: "Sat", orders: 14 },
+  { day: "Sun", orders: 11 },
 ];
 
 export const revenueThisWeek = [
-  { day: "Mon", revenue: 420 }, { day: "Tue", revenue: 580 }, { day: "Wed", revenue: 510 },
-  { day: "Thu", revenue: 720 }, { day: "Fri", revenue: 890 }, { day: "Sat", revenue: 1100 }, { day: "Sun", revenue: 940 },
+  { day: "Mon", revenue: 420 },
+  { day: "Tue", revenue: 580 },
+  { day: "Wed", revenue: 510 },
+  { day: "Thu", revenue: 720 },
+  { day: "Fri", revenue: 890 },
+  { day: "Sat", revenue: 1100 },
+  { day: "Sun", revenue: 940 },
 ];
 
 export const orderStatusBreakdown = [

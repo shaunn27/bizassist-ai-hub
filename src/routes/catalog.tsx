@@ -4,5 +4,9 @@ import { CatalogPage } from "@/components/catalog/CatalogPage";
 
 export const Route = createFileRoute("/catalog")({
   head: () => ({ meta: [{ title: "Catalog — BizAssist AI" }] }),
-  component: () => (<AppShell><CatalogPage /></AppShell>),
+  component: () => (
+    <AppShell>
+      <CatalogPage />
+    </AppShell>
+  ),
 });

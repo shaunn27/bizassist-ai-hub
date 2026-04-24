@@ -4,5 +4,9 @@ import { CustomersPage } from "@/components/customers/CustomersPage";
 
 export const Route = createFileRoute("/customers")({
   head: () => ({ meta: [{ title: "Customers — BizAssist AI" }] }),
-  component: () => (<AppShell><CustomersPage /></AppShell>),
+  component: () => (
+    <AppShell>
+      <CustomersPage />
+    </AppShell>
+  ),
 });

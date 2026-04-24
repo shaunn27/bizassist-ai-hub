@@ -1,7 +1,11 @@
 export function playPing() {
   if (typeof window === "undefined") return;
   try {
-    const AC: typeof AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
+    const w = window as {
+      AudioContext?: typeof AudioContext;
+      webkitAudioContext?: typeof AudioContext;
+    };
+    const AC = w.AudioContext || w.webkitAudioContext;
     if (!AC) return;
     const ctx = new AC();
     const osc = ctx.createOscillator();
@@ -15,5 +19,8 @@ export function playPing() {
     osc.connect(gain).connect(ctx.destination);
     osc.start();
     osc.stop(ctx.currentTime + 0.32);
-  } catch {}
+  } catch (err: unknown) {
+    // Audio context not available or error playing sound
+    console.debug("Audio playback failed:", err);
+  }
 }

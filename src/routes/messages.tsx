@@ -4,5 +4,9 @@ import { MessagesPage } from "@/components/chat/MessagesPage";
 
 export const Route = createFileRoute("/messages")({
   head: () => ({ meta: [{ title: "Messages — BizAssist AI" }] }),
-  component: () => (<AppShell><MessagesPage /></AppShell>),
+  component: () => (
+    <AppShell>
+      <MessagesPage />
+    </AppShell>
+  ),
 });

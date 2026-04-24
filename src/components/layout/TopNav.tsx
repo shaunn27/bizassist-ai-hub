@@ -1,6 +1,16 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter, useRouterState } from "@tanstack/react-router";
-import { Search, Bell, Sun, Moon, Settings as SettingsIcon, AlertCircle, AlertTriangle, CheckCircle2, Info } from "lucide-react";
+import {
+  Search,
+  Bell,
+  Sun,
+  Moon,
+  Settings as SettingsIcon,
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
+  Info,
+} from "lucide-react";
 import { useApp } from "@/lib/appContext";
 import { cn } from "@/lib/utils";
 
@@ -72,10 +82,19 @@ export function TopNav() {
             <div className="absolute right-0 top-11 w-96 bg-popover border border-border rounded-lg shadow-lg z-50 overflow-hidden animate-fade-in">
               <div className="flex items-center justify-between p-3 border-b border-border">
                 <span className="font-semibold text-sm">Notifications</span>
-                <button onClick={markAllRead} className="text-xs text-primary hover:underline font-medium">Mark all read</button>
+                <button
+                  onClick={markAllRead}
+                  className="text-xs text-primary hover:underline font-medium"
+                >
+                  Mark all read
+                </button>
               </div>
               <div className="max-h-96 overflow-y-auto">
-                {notifications.length === 0 && <div className="p-6 text-center text-sm text-muted-foreground">No notifications</div>}
+                {notifications.length === 0 && (
+                  <div className="p-6 text-center text-sm text-muted-foreground">
+                    No notifications
+                  </div>
+                )}
                 {notifications.map((n) => (
                   <button
                     key={n.id}
@@ -90,7 +109,7 @@ export function TopNav() {
                     }}
                     className={cn(
                       "w-full text-left flex gap-3 p-3 hover:bg-accent/60 border-b border-border transition-colors",
-                      !n.read && "bg-primary-soft/40"
+                      !n.read && "bg-primary-soft/40",
                     )}
                   >
                     <div className="mt-0.5">{sevIcon(n.severity)}</div>
@@ -98,7 +117,9 @@ export function TopNav() {
                       <p className="text-sm text-foreground">{n.text}</p>
                       <p className="text-[11px] text-muted-foreground mt-0.5">{n.time}</p>
                     </div>
-                    {!n.read && <span className="h-2 w-2 rounded-full bg-primary mt-1.5 shrink-0" />}
+                    {!n.read && (
+                      <span className="h-2 w-2 rounded-full bg-primary mt-1.5 shrink-0" />
+                    )}
                   </button>
                 ))}
               </div>
@@ -111,7 +132,11 @@ export function TopNav() {
           className="h-9 w-9 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground flex items-center justify-center"
           aria-label="Toggle theme"
         >
-          {theme === "light" ? <Moon className="h-[18px] w-[18px]" /> : <Sun className="h-[18px] w-[18px]" />}
+          {theme === "light" ? (
+            <Moon className="h-[18px] w-[18px]" />
+          ) : (
+            <Sun className="h-[18px] w-[18px]" />
+          )}
         </button>
 
         <button

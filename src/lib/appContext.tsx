@@ -84,11 +84,45 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [meetings, setMeetings] = useState<Meeting[]>(mockMeetings);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [notifications, setNotifications] = useState<Notification[]>([
-    { id: "n1", severity: "critical", text: "Ah Kow hasn't received a reply for 18 minutes", time: "11:03 AM", read: false, link: { type: "chat", id: "c1" } },
-    { id: "n2", severity: "critical", text: "Raj Kumar shows cancellation intent", time: "02:50 PM", read: false, link: { type: "chat", id: "c3" } },
-    { id: "n3", severity: "warning", text: "Siti Binti's order has missing delivery address", time: "09:30 AM", read: false, link: { type: "chat", id: "c2" } },
-    { id: "n4", severity: "success", text: "Order #ORD-0019 marked as delivered", time: "5 days ago", read: true },
-    { id: "n5", severity: "info", text: "New message from David Tan", time: "01:47 PM", read: false, link: { type: "chat", id: "c5" } },
+    {
+      id: "n1",
+      severity: "critical",
+      text: "Ah Kow hasn't received a reply for 18 minutes",
+      time: "11:03 AM",
+      read: false,
+      link: { type: "chat", id: "c1" },
+    },
+    {
+      id: "n2",
+      severity: "critical",
+      text: "Raj Kumar shows cancellation intent",
+      time: "02:50 PM",
+      read: false,
+      link: { type: "chat", id: "c3" },
+    },
+    {
+      id: "n3",
+      severity: "warning",
+      text: "Siti Binti's order has missing delivery address",
+      time: "09:30 AM",
+      read: false,
+      link: { type: "chat", id: "c2" },
+    },
+    {
+      id: "n4",
+      severity: "success",
+      text: "Order #ORD-0019 marked as delivered",
+      time: "5 days ago",
+      read: true,
+    },
+    {
+      id: "n5",
+      severity: "info",
+      text: "New message from David Tan",
+      time: "01:47 PM",
+      read: false,
+      link: { type: "chat", id: "c5" },
+    },
   ]);
 
   // Load persisted state
@@ -98,7 +132,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (t) setTheme(t);
     const s = localStorage.getItem("ba_settings");
     if (s) {
-      try { setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(s) }); } catch {}
+      try {
+        setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(s) });
+      } catch (err: unknown) {
+        console.debug("Failed to parse stored settings:", err);
+      }
     }
     const b = localStorage.getItem("ba_business");
     if (b) setBusiness(b);
@@ -110,30 +148,54 @@ export function AppProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("ba_theme", theme);
   }, [theme]);
 
-  useEffect(() => { if (typeof window !== "undefined") localStorage.setItem("ba_business", business); }, [business]);
-  useEffect(() => { if (typeof window !== "undefined") localStorage.setItem("ba_settings", JSON.stringify(settings)); }, [settings]);
+  useEffect(() => {
+    if (typeof window !== "undefined") localStorage.setItem("ba_business", business);
+  }, [business]);
+  useEffect(() => {
+    if (typeof window !== "undefined")
+      localStorage.setItem("ba_settings", JSON.stringify(settings));
+  }, [settings]);
 
   const toggleTheme = () => setTheme((t) => (t === "light" ? "dark" : "light"));
 
   const sendAgentMessage = (customerId: string, text: string) => {
     const now = new Date();
-    const time = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
-    const msg: ChatMessage = { id: `a${Date.now()}`, from: "agent", type: "text", text, time, timestamp: now.getTime() };
-    setChats((prev) => prev.map((c) => c.customerId === customerId
-      ? { ...c, messages: [...c.messages, msg], waitingMinutes: 0, lastMessagePreview: text }
-      : c));
+    const time = now.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+    const msg: ChatMessage = {
+      id: `a${Date.now()}`,
+      from: "agent",
+      type: "text",
+      text,
+      time,
+      timestamp: now.getTime(),
+    };
+    setChats((prev) =>
+      prev.map((c) =>
+        c.customerId === customerId
+          ? { ...c, messages: [...c.messages, msg], waitingMinutes: 0, lastMessagePreview: text }
+          : c,
+      ),
+    );
   };
 
   const markChatRead = (customerId: string) => {
-    setChats((prev) => prev.map((c) => c.customerId === customerId ? { ...c, unread: 0 } : c));
+    setChats((prev) => prev.map((c) => (c.customerId === customerId ? { ...c, unread: 0 } : c)));
   };
 
   const updateOrderStatus = (id: string, status: Order["status"]) => {
-    setOrders((prev) => prev.map((o) => o.id === id ? { ...o, status } : o));
+    setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status } : o)));
   };
 
   const addNotification = (n: Omit<Notification, "id" | "time" | "read">) => {
-    const time = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
+    const time = new Date().toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
     setNotifications((prev) => [{ id: `n${Date.now()}`, time, read: false, ...n }, ...prev]);
   };
 
@@ -141,13 +203,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const updateSettings = (s: Partial<Settings>) => setSettings((cur) => ({ ...cur, ...s }));
 
-  const value = useMemo<AppCtx>(() => ({
-    theme, toggleTheme, business, setBusiness, sidebarCollapsed, setSidebarCollapsed,
-    chats, activeChatId, setActiveChatId, sendAgentMessage, markChatRead,
-    orders, updateOrderStatus, meetings, setMeetings,
-    notifications, addNotification, markAllRead,
-    settings, updateSettings,
-  }), [theme, business, sidebarCollapsed, chats, activeChatId, orders, meetings, notifications, settings]);
+  const value = useMemo<AppCtx>(
+    () => ({
+      theme,
+      toggleTheme,
+      business,
+      setBusiness,
+      sidebarCollapsed,
+      setSidebarCollapsed,
+      chats,
+      activeChatId,
+      setActiveChatId,
+      sendAgentMessage,
+      markChatRead,
+      orders,
+      updateOrderStatus,
+      meetings,
+      setMeetings,
+      notifications,
+      addNotification,
+      markAllRead,
+      settings,
+      updateSettings,
+    }),
+    [
+      theme,
+      business,
+      sidebarCollapsed,
+      chats,
+      activeChatId,
+      orders,
+      meetings,
+      notifications,
+      settings,
+    ],
+  );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

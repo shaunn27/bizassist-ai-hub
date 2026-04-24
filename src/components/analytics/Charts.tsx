@@ -1,4 +1,20 @@
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, Legend } from "recharts";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  LineChart,
+  Line,
+  AreaChart,
+  Area,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+} from "recharts";
 
 const grid = "var(--border)";
 const muted = "var(--muted-foreground)";
@@ -10,7 +26,14 @@ export function MessagesByHourChart({ data }: { data: { hour: string; messages: 
         <CartesianGrid strokeDasharray="3 3" stroke={grid} vertical={false} />
         <XAxis dataKey="hour" stroke={muted} fontSize={11} tickLine={false} axisLine={false} />
         <YAxis stroke={muted} fontSize={11} tickLine={false} axisLine={false} />
-        <Tooltip contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }} />
+        <Tooltip
+          contentStyle={{
+            background: "var(--card)",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            fontSize: 12,
+          }}
+        />
         <Bar dataKey="messages" fill="var(--primary)" radius={[6, 6, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
@@ -24,8 +47,22 @@ export function OrdersWeekLineChart({ data }: { data: { day: string; orders: num
         <CartesianGrid strokeDasharray="3 3" stroke={grid} vertical={false} />
         <XAxis dataKey="day" stroke={muted} fontSize={11} tickLine={false} axisLine={false} />
         <YAxis stroke={muted} fontSize={11} tickLine={false} axisLine={false} />
-        <Tooltip contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }} />
-        <Line type="monotone" dataKey="orders" stroke="var(--primary)" strokeWidth={2.5} dot={{ r: 4, fill: "var(--primary)" }} activeDot={{ r: 6 }} />
+        <Tooltip
+          contentStyle={{
+            background: "var(--card)",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            fontSize: 12,
+          }}
+        />
+        <Line
+          type="monotone"
+          dataKey="orders"
+          stroke="var(--primary)"
+          strokeWidth={2.5}
+          dot={{ r: 4, fill: "var(--primary)" }}
+          activeDot={{ r: 6 }}
+        />
       </LineChart>
     </ResponsiveContainer>
   );
@@ -44,8 +81,21 @@ export function RevenueAreaChart({ data }: { data: { day: string; revenue: numbe
         <CartesianGrid strokeDasharray="3 3" stroke={grid} vertical={false} />
         <XAxis dataKey="day" stroke={muted} fontSize={11} tickLine={false} axisLine={false} />
         <YAxis stroke={muted} fontSize={11} tickLine={false} axisLine={false} />
-        <Tooltip contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }} />
-        <Area type="monotone" dataKey="revenue" stroke="var(--primary)" strokeWidth={2.5} fill="url(#rev)" />
+        <Tooltip
+          contentStyle={{
+            background: "var(--card)",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            fontSize: 12,
+          }}
+        />
+        <Area
+          type="monotone"
+          dataKey="revenue"
+          stroke="var(--primary)"
+          strokeWidth={2.5}
+          fill="url(#rev)"
+        />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -57,10 +107,26 @@ export function StatusDonutChart({ data }: { data: { name: string; value: number
   return (
     <ResponsiveContainer width="100%" height={220}>
       <PieChart>
-        <Pie data={data} dataKey="value" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={2}>
-          {data.map((_, i) => <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />)}
+        <Pie
+          data={data}
+          dataKey="value"
+          nameKey="name"
+          innerRadius={50}
+          outerRadius={80}
+          paddingAngle={2}
+        >
+          {data.map((_, i) => (
+            <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />
+          ))}
         </Pie>
-        <Tooltip contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }} />
+        <Tooltip
+          contentStyle={{
+            background: "var(--card)",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            fontSize: 12,
+          }}
+        />
         <Legend wrapperStyle={{ fontSize: 11 }} />
       </PieChart>
     </ResponsiveContainer>

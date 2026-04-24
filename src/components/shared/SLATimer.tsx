@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 
-export function SLATimer({ baseMinutes, compact = false }: { baseMinutes: number; compact?: boolean }) {
+export function SLATimer({
+  baseMinutes,
+  compact = false,
+}: {
+  baseMinutes: number;
+  compact?: boolean;
+}) {
   // baseMinutes is "minutes already waited" when component mounts; we tick every second
   const [seconds, setSeconds] = useState(baseMinutes * 60);
   useEffect(() => {
@@ -18,10 +24,20 @@ export function SLATimer({ baseMinutes, compact = false }: { baseMinutes: number
   const bg = m >= 15 ? "bg-destructive/10" : m >= 5 ? "bg-warning/10" : "bg-success/10";
 
   if (compact) {
-    return <span className={cn("text-[10px] font-semibold", color)}>waiting {m}m {s.toString().padStart(2, "0")}s</span>;
+    return (
+      <span className={cn("text-[10px] font-semibold", color)}>
+        waiting {m}m {s.toString().padStart(2, "0")}s
+      </span>
+    );
   }
   return (
-    <span className={cn("inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold transition-colors", color, bg)}>
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold transition-colors",
+        color,
+        bg,
+      )}
+    >
       <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
       SLA {m}:{s.toString().padStart(2, "0")}
     </span>

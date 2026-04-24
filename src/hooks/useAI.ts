@@ -8,7 +8,7 @@ const ANTHROPIC_URL = "https://api.ilumu.ai/v1/messages";
 export function getApiKey(settingsKey: string): string {
   // Settings override -> env -> empty
   if (settingsKey) return settingsKey;
-  const env = (import.meta as any).env.VITE_ANTHROPIC_API_KEY;
+  const env = (import.meta.env as Record<string, string | undefined>).VITE_ANTHROPIC_API_KEY;
   return env || "";
 }
 
@@ -38,7 +38,7 @@ async function callAnthropic(opts: {
     const text = await res.text();
     throw new Error(`Anthropic API ${res.status}: ${text.slice(0, 300)}`);
   }
-  const data = await res.json();
+  const data = (await res.json()) as { content?: Array<{ text?: string }> };
   const block = data?.content?.[0];
   return block?.text || "";
 }
@@ -48,56 +48,64 @@ export function useAI() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const analyze = useCallback(async (formattedConversation: string, contextBlock = ""): Promise<AIAnalysis | null> => {
-    // Demo mode - return mock analysis without API call
-    setLoading(true);
-    setError(null);
-    try {
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate loading
-      return {
-        detectedLanguage: "English",
-        confidenceScore: 92,
-        requestType: "Order",
-        orderSummary: {
-          items: ["Product"],
-          quantity: "1",
-          deliveryAddress: "Sample Address",
-          deadline: "Today",
-          specialInstructions: "None",
-          missingFields: [],
-        },
-        confirmedDetails: ["Customer confirmed order"],
-        unclearItems: [],
-        flags: [],
-        suggestedReply: "Thank you for your order! We'll process this right away.",
-        agentChecklist: ["Confirm order details", "Send confirmation"],
-        customerBehaviorNote: "Regular customer",
-      };
-    } catch (e: any) {
-      setError(e.message || String(e));
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, [settings]);
+  const analyze = useCallback(
+    async (formattedConversation: string, contextBlock = ""): Promise<AIAnalysis | null> => {
+      // Demo mode - return mock analysis without API call
+      setLoading(true);
+      setError(null);
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 1000)); // Simulate loading
+        return {
+          detectedLanguage: "English",
+          confidenceScore: 92,
+          requestType: "Order",
+          orderSummary: {
+            items: ["Product"],
+            quantity: "1",
+            deliveryAddress: "Sample Address",
+            deadline: "Today",
+            specialInstructions: "None",
+            missingFields: [],
+          },
+          confirmedDetails: ["Customer confirmed order"],
+          unclearItems: [],
+          flags: [],
+          suggestedReply: "Thank you for your order! We'll process this right away.",
+          agentChecklist: ["Confirm order details", "Send confirmation"],
+          customerBehaviorNote: "Regular customer",
+        };
+      } catch (e: unknown) {
+        const error = e instanceof Error ? e : new Error(String(e));
+        setError(error.message);
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
 
-  const chatWithAI = useCallback(async (
-    history: { role: "user" | "assistant"; content: string }[],
-    contextBlock: string,
-  ): Promise<string | null> => {
-    // Demo mode - return mock response without API call
-    setLoading(true);
-    setError(null);
-    try {
-      await new Promise(resolve => setTimeout(resolve, 800)); // Simulate loading
-      return "Based on the conversation, the customer seems satisfied with the resolution. I'd recommend sending a follow-up message to confirm everything is working properly.";
-    } catch (e: any) {
-      setError(e.message || String(e));
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, [settings]);
+  const chatWithAI = useCallback(
+    async (
+      history: { role: "user" | "assistant"; content: string }[],
+      contextBlock: string,
+    ): Promise<string | null> => {
+      // Demo mode - return mock response without API call
+      setLoading(true);
+      setError(null);
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 800)); // Simulate loading
+        return "Based on the conversation, the customer seems satisfied with the resolution. I'd recommend sending a follow-up message to confirm everything is working properly.";
+      } catch (e: unknown) {
+        const error = e instanceof Error ? e : new Error(String(e));
+        setError(error.message);
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
 
   return { analyze, chatWithAI, loading, error };
 }

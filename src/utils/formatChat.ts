@@ -19,7 +19,10 @@ Loyal since: ${customer.loyalSince}
 Total orders: ${customer.totalOrders} (RM${customer.totalSpent} lifetime)
 Preferred products: ${customer.preferredProducts.join(", ")}
 Behavior note: ${customer.behaviorSummary}
-Recent orders: ${customer.orderHistory.slice(0, 3).map(o => `${o.id} ${o.items} RM${o.amount}`).join("; ")}
+Recent orders: ${customer.orderHistory
+      .slice(0, 3)
+      .map((o) => `${o.id} ${o.items} RM${o.amount}`)
+      .join("; ")}
 
 ## CONVERSATION
 `;

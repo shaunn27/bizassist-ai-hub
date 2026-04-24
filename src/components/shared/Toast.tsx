@@ -17,7 +17,9 @@ export function ToastHost() {
       setItems((cur) => [...cur, { ...t, id }]);
       setTimeout(() => setItems((cur) => cur.filter((x) => x.id !== id)), 3000);
     };
-    return () => { pushFn = null; };
+    return () => {
+      pushFn = null;
+    };
   }, []);
   return (
     <div className="fixed bottom-5 right-5 z-[100] flex flex-col gap-2 pointer-events-none">
@@ -46,17 +48,39 @@ export function ToastHost() {
   );
 }
 
-export function Modal({ open, onClose, title, children, footer }: { open: boolean; onClose: () => void; title: string; children: ReactNode; footer?: ReactNode }) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  footer,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: ReactNode;
+  footer?: ReactNode;
+}) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[80] bg-foreground/40 flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
-      <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-[80] bg-foreground/40 flex items-center justify-center p-4 animate-fade-in"
+      onClick={onClose}
+    >
+      <div
+        className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between p-4 border-b border-border">
           <h3 className="font-semibold text-foreground">{title}</h3>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="h-4 w-4" />
+          </button>
         </div>
         <div className="p-4">{children}</div>
-        {footer && <div className="p-4 border-t border-border flex justify-end gap-2">{footer}</div>}
+        {footer && (
+          <div className="p-4 border-t border-border flex justify-end gap-2">{footer}</div>
+        )}
       </div>
     </div>
   );
