@@ -70,7 +70,9 @@ type AppCtx = {
 
 const Ctx = createContext<AppCtx | null>(null);
 
-const BUSINESSES = ["Kedai Maju Enterprise", "Siti's Bakehouse", "RajTech Solutions"];
+export const BUSINESS_LIST = ["Kedai Maju Enterprise", "Siti's Bakehouse", "RajTech Solutions"];
+
+const BUSINESSES = BUSINESS_LIST;
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<"light" | "dark">("light");
@@ -155,5 +157,3 @@ export function useApp() {
   if (!v) throw new Error("useApp must be used within AppProvider");
   return v;
 }
-
-export const BUSINESS_LIST = BUSINESSES;

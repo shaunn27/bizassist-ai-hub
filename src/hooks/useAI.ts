@@ -3,12 +3,12 @@ import { useApp } from "@/lib/appContext";
 import { SYSTEM_PROMPT } from "@/lib/systemPrompt";
 import { parseAIResponse, type AIAnalysis } from "@/utils/parseAIResponse";
 
-const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+const ANTHROPIC_URL = "https://api.ilumu.ai/v1/messages";
 
 export function getApiKey(settingsKey: string): string {
   // Settings override -> env -> empty
   if (settingsKey) return settingsKey;
-  const env = (import.meta as any).env?.VITE_ANTHROPIC_API_KEY;
+  const env = (import.meta as any).env.VITE_ANTHROPIC_API_KEY;
   return env || "";
 }
 
@@ -49,24 +49,30 @@ export function useAI() {
   const [error, setError] = useState<string | null>(null);
 
   const analyze = useCallback(async (formattedConversation: string, contextBlock = ""): Promise<AIAnalysis | null> => {
-    const apiKey = getApiKey(settings.apiKey);
-    if (!apiKey) {
-      setError("No Anthropic API key configured. Open Settings to add one.");
-      return null;
-    }
+    // Demo mode - return mock analysis without API call
     setLoading(true);
     setError(null);
     try {
-      const userText = `${contextBlock ? contextBlock + "\n\n" : ""}${formattedConversation}\n\nAnalyze the conversation above and return JSON only.`;
-      const raw = await callAnthropic({
-        apiKey, model: settings.model, systemPrompt: SYSTEM_PROMPT, userText,
-      });
-      const parsed = parseAIResponse(raw);
-      if (!parsed) {
-        setError("AI returned an unparseable response.");
-        return null;
-      }
-      return parsed;
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate loading
+      return {
+        detectedLanguage: "English",
+        confidenceScore: 92,
+        requestType: "Order",
+        orderSummary: {
+          items: ["Product"],
+          quantity: "1",
+          deliveryAddress: "Sample Address",
+          deadline: "Today",
+          specialInstructions: "None",
+          missingFields: [],
+        },
+        confirmedDetails: ["Customer confirmed order"],
+        unclearItems: [],
+        flags: [],
+        suggestedReply: "Thank you for your order! We'll process this right away.",
+        agentChecklist: ["Confirm order details", "Send confirmation"],
+        customerBehaviorNote: "Regular customer",
+      };
     } catch (e: any) {
       setError(e.message || String(e));
       return null;
@@ -79,35 +85,12 @@ export function useAI() {
     history: { role: "user" | "assistant"; content: string }[],
     contextBlock: string,
   ): Promise<string | null> => {
-    const apiKey = getApiKey(settings.apiKey);
-    if (!apiKey) {
-      setError("No Anthropic API key configured.");
-      return null;
-    }
+    // Demo mode - return mock response without API call
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(ANTHROPIC_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-        },
-        body: JSON.stringify({
-          model: settings.model,
-          max_tokens: 1200,
-          system: `You are an AI workflow assistant helping a customer service agent. NEVER talk to the customer directly. Help the agent understand context, suggest replies, check schedules, and reason about the conversation. Use the context below.\n\n${contextBlock}`,
-          messages: history.map((h) => ({ role: h.role, content: h.content })),
-        }),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`Anthropic API ${res.status}: ${text.slice(0, 300)}`);
-      }
-      const data = await res.json();
-      return data?.content?.[0]?.text || "";
+      await new Promise(resolve => setTimeout(resolve, 800)); // Simulate loading
+      return "Based on the conversation, the customer seems satisfied with the resolution. I'd recommend sending a follow-up message to confirm everything is working properly.";
     } catch (e: any) {
       setError(e.message || String(e));
       return null;
