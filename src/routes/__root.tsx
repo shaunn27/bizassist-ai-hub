@@ -1,6 +1,8 @@
 import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 
 import appCss from "../styles.css?url";
+import { AppProvider } from "@/lib/appContext";
+import { ToastHost } from "@/components/shared/Toast";
 
 function NotFoundComponent() {
   return (
@@ -71,5 +73,10 @@ function RootShell({ children }: { children: React.ReactNode }) {
 }
 
 function RootComponent() {
-  return <Outlet />;
+  return (
+    <AppProvider>
+      <Outlet />
+      <ToastHost />
+    </AppProvider>
+  );
 }
