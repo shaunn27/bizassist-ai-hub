@@ -1,7 +1,6 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "dist/client",
-  "public": "dist/client",
   "rewrites": [
     { "source": "/assets/(.*)", "destination": "/assets/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
