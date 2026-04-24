@@ -1,9 +1,11 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Home, MessageCircle, Package, Calendar, BarChart3, Users, Tag, Settings, ChevronLeft, ChevronRight, Building2 } from "lucide-react";
+import { Home, MessageCircle, Package, Calendar, BarChart3, Users, Tag, Settings, ChevronLeft, ChevronRight, Building2, type LucideIcon } from "lucide-react";
 import { useApp, BUSINESS_LIST } from "@/lib/appContext";
 import { cn } from "@/lib/utils";
 
-const NAV = [
+type NavItem = { to: string; label: string; icon: LucideIcon; exact?: boolean; badge?: "messages" | "orders" };
+
+const NAV: NavItem[] = [
   { to: "/", label: "Dashboard", icon: Home, exact: true },
   { to: "/messages", label: "Messages", icon: MessageCircle, badge: "messages" },
   { to: "/orders", label: "Orders", icon: Package, badge: "orders" },
@@ -12,7 +14,7 @@ const NAV = [
   { to: "/customers", label: "Customers", icon: Users },
   { to: "/catalog", label: "Catalog", icon: Tag },
   { to: "/settings", label: "Settings", icon: Settings },
-] as const;
+];
 
 export function Sidebar() {
   const { sidebarCollapsed, setSidebarCollapsed, chats, orders, business, setBusiness } = useApp();
@@ -40,6 +42,7 @@ export function Sidebar() {
           return (
             <Link
               key={item.to}
+              // @ts-expect-error - dynamic route paths
               to={item.to}
               className={cn(
                 "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors group relative",
