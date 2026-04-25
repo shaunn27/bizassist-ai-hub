@@ -1,9 +1,11 @@
 import { useCallback, useState } from "react";
 import { useApp } from "@/lib/appContext";
 import { type AIAnalysis } from "@/utils/parseAIResponse";
+import { type ChatActionPlan } from "@/utils/chatActions";
 import {
   analyzeConversation,
   chatWithAiAssistant,
+  generateChatActionPlan,
   testIlmuConnection,
 } from "@/server/ai.functions";
 
@@ -96,6 +98,30 @@ export function useAI() {
     [resolveApiKey, resolveModel],
   );
 
+  const proposeActions = useCallback(
+    async (formattedConversation: string, contextBlock = ""): Promise<ChatActionPlan | null> => {
+      setLoading(true);
+      setError(null);
+      try {
+        return await generateChatActionPlan({
+          data: {
+            apiKey: resolveApiKey(),
+            model: resolveModel(),
+            formattedConversation,
+            contextBlock,
+          },
+        });
+      } catch (e: unknown) {
+        const error = e instanceof Error ? e : new Error(String(e));
+        setError(error.message);
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [resolveApiKey, resolveModel],
+  );
+
   const testConnection = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -115,5 +141,5 @@ export function useAI() {
     }
   }, [resolveApiKey, resolveModel]);
 
-  return { analyze, chatWithAI, testConnection, loading, error };
+  return { analyze, chatWithAI, proposeActions, testConnection, loading, error };
 }

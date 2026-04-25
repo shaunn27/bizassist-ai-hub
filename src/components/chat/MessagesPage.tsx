@@ -21,12 +21,17 @@ import { mockProducts } from "@/data/mockProducts";
 import { mockMeetings } from "@/data/mockMeetings";
 import { formatChatForAI, buildContextBlock } from "@/utils/formatChat";
 import type { AIAnalysis } from "@/utils/parseAIResponse";
+import type { ChatActionPlan, ActionProposal } from "@/utils/chatActions";
 import { parseWhatsAppExport } from "@/utils/parseWhatsAppExport";
 import { SLATimer } from "@/components/shared/SLATimer";
 import { Badge } from "@/components/shared/Badge";
 import { Modal, toast } from "@/components/shared/Toast";
 import { cn } from "@/lib/utils";
 import { playPing } from "@/hooks/useSound";
+import {
+  persistConfirmedOrder,
+  persistConfirmedMeeting,
+} from "@/server/action.functions";
 
 type AIChatMsg = { role: "user" | "assistant"; content: string };
 
@@ -66,14 +71,18 @@ export function MessagesPage() {
     sendAgentMessage,
     markChatRead,
     importWhatsAppChat,
+    createOrder,
+    createMeeting,
     settings,
     addNotification,
   } = useApp();
-  const { analyze, chatWithAI, loading: aiLoading, error: aiError } = useAI();
+  const { analyze, chatWithAI, proposeActions, loading: aiLoading, error: aiError } = useAI();
   const [search, setSearch] = useState("");
-  const [activeTab, setActiveTab] = useState<"analysis" | "chat">("analysis");
+  const [activeTab, setActiveTab] = useState<"analysis" | "chat" | "actions">("analysis");
   const [analyses, setAnalyses] = useState<Record<string, AIAnalysis | null>>({});
+  const [actionPlans, setActionPlans] = useState<Record<string, ChatActionPlan | null>>({});
   const [analyzing, setAnalyzing] = useState(false);
+  const [planning, setPlanning] = useState(false);
   const [aiChats, setAiChats] = useState<Record<string, AIChatMsg[]>>({});
   const [aiInput, setAiInput] = useState("");
   const [chatInput, setChatInput] = useState("");
@@ -200,6 +209,103 @@ export function MessagesPage() {
     meetingsToday: meetingsStr,
   });
 
+  const generateActionPlan = async () => {
+    if (!activeChat || !activeChatId) return;
+    setPlanning(true);
+    const formatted = formatChatForAI(activeChat.messages, activeCustomer);
+    const result = await proposeActions(formatted, ctxBlock);
+    setPlanning(false);
+    if (result) {
+      setActionPlans((prev) => ({ ...prev, [activeChatId]: result }));
+      toast("AI action plan ready", "success");
+    } else if (aiError) {
+      toast(aiError, "error");
+    }
+  };
+
+  const confirmProposal = async (proposal: ActionProposal) => {
+    if (!activeChat || !activeCustomer) return;
+
+    try {
+      if (proposal.kind === "order" && proposal.orderDraft) {
+        const order = createOrder({
+          customerId: activeCustomer.id,
+          customerName: activeCustomer.name,
+          items: proposal.orderDraft.items.join(", "),
+          total: proposal.orderDraft.total ?? 0,
+          chatExcerpt: activeChat.lastMessagePreview,
+        });
+        await persistConfirmedOrder({
+          data: {
+            customerName: activeCustomer.name,
+            customerPhone: activeCustomer.phone,
+            items: proposal.orderDraft.items,
+            total: proposal.orderDraft.total ?? 0,
+            chatExcerpt: activeChat.lastMessagePreview,
+          },
+        });
+        toast(`Order confirmed: ${order.id}`, "success");
+        return;
+      }
+
+      if (proposal.kind === "meeting" && proposal.meetingDraft) {
+        const meeting = createMeeting({
+          customerId: activeCustomer.id,
+          customerName: activeCustomer.name,
+          date: proposal.meetingDraft.date,
+          time: proposal.meetingDraft.time,
+          duration: proposal.meetingDraft.duration,
+          purpose: proposal.meetingDraft.purpose,
+        });
+        await persistConfirmedMeeting({
+          data: {
+            customerName: activeCustomer.name,
+            customerPhone: activeCustomer.phone,
+            date: proposal.meetingDraft.date,
+            time: proposal.meetingDraft.time,
+            duration: proposal.meetingDraft.duration,
+            purpose: proposal.meetingDraft.purpose,
+          },
+        });
+        toast(`Meeting scheduled: ${meeting.id}`, "success");
+        return;
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Confirmation failed";
+      toast(message, "error");
+      return;
+    }
+
+    if (proposal.kind === "refund") {
+      addNotification({
+        severity: "warning",
+        text: `Refund review queued for ${activeCustomer.name}`,
+        link: { type: "chat", id: activeCustomer.id },
+      });
+      toast("Refund request queued", "success");
+      return;
+    }
+
+    if (proposal.kind === "escalation") {
+      addNotification({
+        severity: "critical",
+        text: `Escalation required for ${activeCustomer.name}`,
+        link: { type: "chat", id: activeCustomer.id },
+      });
+      toast("Escalation logged", "success");
+      return;
+    }
+
+    if (proposal.kind === "inventory") {
+      addNotification({
+        severity: "info",
+        text: `Inventory check queued for ${activeCustomer.name}`,
+        link: { type: "order", id: activeCustomer.id },
+      });
+      toast("Inventory check logged", "success");
+    }
+  };
+
   const runAnalysis = async () => {
     if (!activeChat || !activeChatId) return;
     setShowAnalysisBanner(true);
@@ -256,7 +362,7 @@ export function MessagesPage() {
   return (
     <div className="h-full flex">
       {/* Inbox List */}
-      <div className="w-[260px] border-r border-border bg-card flex flex-col shrink-0">
+      <div className="w-65 border-r border-border bg-card flex flex-col shrink-0">
         <div className="p-3 border-b border-border">
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -291,7 +397,7 @@ export function MessagesPage() {
                 {c.flagged && (
                   <span
                     className={cn(
-                      "absolute left-0 top-0 bottom-0 w-[3px]",
+                      "absolute left-0 top-0 bottom-0 w-0.75",
                       c.flagged === "critical" ? "bg-destructive" : "bg-warning",
                     )}
                   />
@@ -372,7 +478,7 @@ export function MessagesPage() {
                   )}
                 >
                   {m.type === "text" && (
-                    <p className="text-sm whitespace-pre-wrap break-words">{m.text}</p>
+                    <p className="text-sm whitespace-pre-wrap wrap-break-word">{m.text}</p>
                   )}
                   {m.type === "image" && (
                     <div className="flex items-center gap-2 py-1">
@@ -383,7 +489,7 @@ export function MessagesPage() {
                     </div>
                   )}
                   {m.type === "voice" && (
-                    <div className="flex items-center gap-2 py-1 min-w-[140px]">
+                    <div className="flex items-center gap-2 py-1 min-w-35">
                       <button className="h-7 w-7 rounded-full bg-foreground/10 flex items-center justify-center">
                         <Play className="h-3.5 w-3.5" />
                       </button>
@@ -477,9 +583,9 @@ export function MessagesPage() {
       </div>
 
       {/* AI Panel */}
-      <div className="w-[380px] border-l border-border bg-card flex flex-col shrink-0">
+      <div className="w-95 border-l border-border bg-card flex flex-col shrink-0">
         <div className="border-b border-border flex items-center px-3 shrink-0">
-          {(["analysis", "chat"] as const).map((tab) => (
+          {(["analysis", "actions", "chat"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -490,10 +596,10 @@ export function MessagesPage() {
                   : "border-transparent text-muted-foreground hover:text-foreground",
               )}
             >
-              {tab === "analysis" ? "AI Analysis" : "Chat with AI"}
+              {tab === "analysis" ? "AI Analysis" : tab === "actions" ? "AI Actions" : "Chat with AI"}
             </button>
           ))}
-          {(analyzing || aiLoading) && (
+          {(analyzing || planning || aiLoading) && (
             <Loader2 className="h-3.5 w-3.5 ml-auto text-primary animate-spin" />
           )}
         </div>
@@ -504,6 +610,13 @@ export function MessagesPage() {
             onRun={runAnalysis}
             onUseReply={(r) => setChatInput(r)}
             loading={analyzing}
+          />
+        ) : activeTab === "actions" ? (
+          <ActionsTab
+            plan={activeChatId ? actionPlans[activeChatId] || null : null}
+            loading={planning}
+            onGenerate={generateActionPlan}
+            onConfirm={confirmProposal}
           />
         ) : (
           <AiChatTab
@@ -977,6 +1090,153 @@ function AiChatTab({
           <Send className="h-3.5 w-3.5" />
         </button>
       </div>
+    </div>
+  );
+}
+
+function ActionsTab({
+  plan,
+  loading,
+  onGenerate,
+  onConfirm,
+}: {
+  plan: ChatActionPlan | null;
+  loading: boolean;
+  onGenerate: () => void;
+  onConfirm: (proposal: ActionProposal) => void;
+}) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  if (!plan && !loading) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+        <Sparkles className="h-8 w-8 text-primary mb-3" />
+        <h4 className="font-semibold text-foreground">No action plan yet</h4>
+        <p className="text-xs text-muted-foreground mt-1 mb-4">
+          Generate a structured action plan from the conversation so you can confirm order,
+          meeting, refund, or escalation actions.
+        </p>
+        <button
+          onClick={onGenerate}
+          className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-semibold"
+        >
+          Generate Actions
+        </button>
+      </div>
+    );
+  }
+
+  if (loading && !plan) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-6 text-sm text-muted-foreground">
+        <Loader2 className="h-5 w-5 animate-spin mr-2 text-primary" /> Building action plan...
+      </div>
+    );
+  }
+
+  if (!plan) return null;
+
+  return (
+    <div className="flex-1 overflow-y-auto p-3 space-y-3">
+      <div className="bg-primary-soft border border-primary/30 rounded-lg p-3">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] uppercase tracking-wider text-primary-dark dark:text-accent-foreground font-bold">
+            Action Plan
+          </span>
+          <button
+            onClick={onGenerate}
+            className="text-[11px] font-semibold text-primary hover:underline"
+          >
+            Regenerate
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground mt-1">
+          Confirm proposals below to create real order, meeting, or workflow actions.
+        </p>
+      </div>
+
+      {plan.proposals.length === 0 ? (
+        <div className="text-sm text-muted-foreground text-center py-8 border border-dashed border-border rounded-lg">
+          No concrete actions detected. Try asking the AI to inspect the chat again.
+        </div>
+      ) : (
+        plan.proposals.map((proposal) => (
+          <div key={proposal.id} className="bg-card border border-border rounded-lg p-3 space-y-2">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="primary">{proposal.kind}</Badge>
+                  <span className="font-semibold text-foreground">{proposal.title}</span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">{proposal.summary}</p>
+              </div>
+              <div className="text-right">
+                <div className="text-sm font-bold text-foreground">{proposal.confidence}%</div>
+                <div className="text-[10px] text-muted-foreground uppercase">Confidence</div>
+              </div>
+            </div>
+
+            {proposal.missingFields.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {proposal.missingFields.map((field) => (
+                  <Badge key={field} variant="warning">
+                    Missing: {field}
+                  </Badge>
+                ))}
+              </div>
+            )}
+
+            <button
+              onClick={() => setExpandedId((cur) => (cur === proposal.id ? null : proposal.id))}
+              className="text-[11px] font-semibold text-primary hover:underline"
+            >
+              {expandedId === proposal.id ? "Hide details" : "Show details"}
+            </button>
+
+            {expandedId === proposal.id && (
+              <div className="text-xs space-y-2 border-t border-border pt-2">
+                <div>
+                  <div className="font-semibold text-foreground">Why this action</div>
+                  <p className="text-muted-foreground mt-0.5">{proposal.rationale}</p>
+                </div>
+                {proposal.orderDraft && (
+                  <div>
+                    <div className="font-semibold text-foreground">Order draft</div>
+                    <p className="text-muted-foreground mt-0.5">
+                      Items: {proposal.orderDraft.items.join(", ")} | Total: RM
+                      {proposal.orderDraft.total ?? 0}
+                    </p>
+                  </div>
+                )}
+                {proposal.meetingDraft && (
+                  <div>
+                    <div className="font-semibold text-foreground">Meeting draft</div>
+                    <p className="text-muted-foreground mt-0.5">
+                      {proposal.meetingDraft.date} at {proposal.meetingDraft.time} ·
+                      {proposal.meetingDraft.duration}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => onConfirm(proposal)}
+                className="flex-1 h-8 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary-dark"
+              >
+                Confirm
+              </button>
+              <button
+                onClick={onGenerate}
+                className="h-8 px-3 rounded-md border border-border text-xs font-semibold hover:bg-accent"
+              >
+                Refresh
+              </button>
+            </div>
+          </div>
+        ))
+      )}
     </div>
   );
 }

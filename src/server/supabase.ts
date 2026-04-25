@@ -5,6 +5,116 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export type Database = {
   public: {
     Tables: {
+      organizations: {
+        Row: { id: string; name: string; slug: string };
+        Insert: { id?: string; name: string; slug: string };
+        Update: { id?: string; name?: string; slug?: string };
+        Relationships: [];
+      };
+      customers: {
+        Row: {
+          id: string;
+          organization_id: string;
+          display_name: string;
+          phone_e164: string | null;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          display_name: string;
+          phone_e164?: string | null;
+          email?: string | null;
+          avatar_color?: string | null;
+          initials?: string | null;
+          status?: string | null;
+          metadata_json?: Json;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          display_name?: string;
+          phone_e164?: string | null;
+          email?: string | null;
+          avatar_color?: string | null;
+          initials?: string | null;
+          status?: string | null;
+          metadata_json?: Json;
+        };
+        Relationships: [];
+      };
+      orders: {
+        Row: {
+          id: string;
+          organization_id: string;
+          customer_id: string;
+          order_no: string;
+          status: "draft" | "confirmed" | "processing" | "shipped" | "delivered" | "cancelled";
+          grand_total: number;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          customer_id: string;
+          order_no: string;
+          status?: "draft" | "confirmed" | "processing" | "shipped" | "delivered" | "cancelled";
+          subtotal?: number;
+          discount_total?: number;
+          tax_total?: number;
+          grand_total?: number;
+          delivery_address?: string | null;
+          deadline_at?: string | null;
+          notes?: string | null;
+          created_by_user_id?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["orders"]["Insert"]>;
+        Relationships: [];
+      };
+      order_items: {
+        Row: {
+          id: string;
+          order_id: string;
+          item_name_snapshot: string;
+          qty: number;
+          unit_price: number;
+          line_total: number;
+        };
+        Insert: {
+          id?: string;
+          order_id: string;
+          product_id?: string | null;
+          item_name_snapshot: string;
+          qty: number;
+          unit_price: number;
+          line_total: number;
+          notes?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["order_items"]["Insert"]>;
+        Relationships: [];
+      };
+      meetings: {
+        Row: {
+          id: string;
+          organization_id: string;
+          customer_id: string;
+          starts_at: string;
+          purpose: string | null;
+          status: "scheduled" | "completed" | "cancelled" | "no_show";
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          customer_id: string;
+          thread_id?: string | null;
+          assigned_to_user_id?: string | null;
+          starts_at: string;
+          ends_at?: string | null;
+          purpose?: string | null;
+          status?: "scheduled" | "completed" | "cancelled" | "no_show";
+          notes?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["meetings"]["Insert"]>;
+        Relationships: [];
+      };
       chat_threads: {
         Row: {
           id: number;

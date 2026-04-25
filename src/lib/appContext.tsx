@@ -60,10 +60,25 @@ type AppCtx = {
 
   // orders
   orders: Order[];
+  createOrder: (input: {
+    customerId: string;
+    customerName: string;
+    items: string;
+    total: number;
+    chatExcerpt?: string;
+  }) => Order;
   updateOrderStatus: (id: string, status: Order["status"]) => void;
 
   // meetings
   meetings: Meeting[];
+  createMeeting: (input: {
+    customerId: string;
+    customerName: string;
+    date: string;
+    time: string;
+    duration: string;
+    purpose: string;
+  }) => Meeting;
   setMeetings: (m: Meeting[]) => void;
 
   // notifications
@@ -213,6 +228,65 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const toggleTheme = () => setTheme((t) => (t === "light" ? "dark" : "light"));
 
+  const createOrder = (input: {
+    customerId: string;
+    customerName: string;
+    items: string;
+    total: number;
+    chatExcerpt?: string;
+  }) => {
+    const now = new Date();
+    const time = now.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+
+    const order: Order = {
+      id: `ORD-${Date.now().toString().slice(-6)}`,
+      customerId: input.customerId,
+      customerName: input.customerName,
+      items: input.items,
+      total: input.total,
+      source: "WhatsApp",
+      receivedAt: time,
+      status: "Pending",
+      chatExcerpt: input.chatExcerpt,
+      timeline: [
+        { label: "Created", time, done: true },
+        { label: "Confirmed", time: "—", done: false },
+        { label: "Processing", time: "—", done: false },
+        { label: "Delivered", time: "—", done: false },
+      ],
+    };
+
+    setOrders((prev) => [order, ...prev]);
+    return order;
+  };
+
+  const createMeeting = (input: {
+    customerId: string;
+    customerName: string;
+    date: string;
+    time: string;
+    duration: string;
+    purpose: string;
+  }) => {
+    const meeting: Meeting = {
+      id: `MT-${Date.now().toString().slice(-6)}`,
+      customerId: input.customerId,
+      customerName: input.customerName,
+      date: input.date,
+      time: input.time,
+      duration: input.duration,
+      purpose: input.purpose,
+      status: "Scheduled",
+    };
+
+    setMeetings((prev) => [meeting, ...prev]);
+    return meeting;
+  };
+
   const persistThread = (thread: ChatThread) => {
     void upsertPersistedChat({ data: { thread } }).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
@@ -324,8 +398,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       markChatRead,
       importWhatsAppChat,
       orders,
+      createOrder,
       updateOrderStatus,
       meetings,
+      createMeeting,
       setMeetings,
       notifications,
       addNotification,
@@ -343,6 +419,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       meetings,
       notifications,
       settings,
+      createOrder,
+      createMeeting,
     ],
   );
 

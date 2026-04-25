@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { SYSTEM_PROMPT } from "@/lib/systemPrompt";
 import { parseAIResponse, type AIAnalysis } from "@/utils/parseAIResponse";
+import { parseChatActionPlan, type ChatActionPlan } from "@/utils/chatActions";
 
 const ILMU_CHAT_URL = "https://api.ilmu.ai/v1/chat/completions";
 const ILMU_MODELS_URL = "https://api.ilmu.ai/v1/models";
@@ -191,4 +192,48 @@ export const chatWithAiAssistant = createServerFn({ method: "POST" })
     }
 
     return { reply };
+  });
+
+export const generateChatActionPlan = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      apiKey: z.string().optional().default(""),
+      model: z.string().min(1),
+      formattedConversation: z.string().min(1),
+      contextBlock: z.string().optional().default(""),
+    }),
+  )
+  .handler(async ({ data }): Promise<ChatActionPlan> => {
+    const apiKey = requireApiKey(data.apiKey);
+
+    const userText = [
+      data.contextBlock ? `## CONTEXT\n${data.contextBlock}` : "",
+      "## TASK",
+      "Analyze the conversation and return only valid JSON with a proposals array.",
+      "For each proposal include id, kind, title, summary, confidence, rationale, missingFields, and any draft payload.",
+      "Allowed kinds: order, meeting, refund, escalation, inventory.",
+      "For meeting proposals include a concrete date (YYYY-MM-DD), time, duration, and purpose.",
+      "For order proposals include items as an array and a total when it can be inferred.",
+      "Prefer proposals that an operator can confirm with one click.",
+      "## CONVERSATION",
+      data.formattedConversation,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
+    const raw = await callIlmuChat({
+      apiKey,
+      model: data.model,
+      systemPrompt:
+        "You transform support conversations into structured operational action proposals. Return only JSON.",
+      messages: [{ role: "user", content: userText }],
+      maxTokens: 1800,
+    });
+
+    const parsed = parseChatActionPlan(raw);
+    if (!parsed) {
+      throw new Error("Model returned invalid action plan JSON. Try again or adjust model.");
+    }
+
+    return parsed;
   });
