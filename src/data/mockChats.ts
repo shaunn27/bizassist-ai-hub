@@ -11,6 +11,11 @@ export type ChatMessage = {
 
 export type ChatThread = {
   customerId: string;
+  customerName?: string;
+  customerPhone?: string;
+  customerAvatarColor?: string;
+  customerInitials?: string;
+  source?: "seed" | "whatsapp-import" | "supabase";
   flagged: "critical" | "warning" | "info" | null;
   unread: number;
   status: "open" | "resolved";

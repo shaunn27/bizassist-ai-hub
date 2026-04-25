@@ -2,6 +2,13 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { mockChats, type ChatThread, type ChatMessage } from "@/data/mockChats";
 import { mockOrders, type Order } from "@/data/mockOrders";
 import { mockMeetings, type Meeting } from "@/data/mockMeetings";
+import { listPersistedChats, upsertPersistedChat } from "@/server/chat.functions";
+import {
+  avatarColorFromSeed,
+  makeCustomerId,
+  makeInitials,
+  type ParsedWhatsAppChat,
+} from "@/utils/parseWhatsAppExport";
 
 export type Notification = {
   id: string;
@@ -49,6 +56,7 @@ type AppCtx = {
   setActiveChatId: (id: string | null) => void;
   sendAgentMessage: (customerId: string, text: string) => void;
   markChatRead: (customerId: string) => void;
+  importWhatsAppChat: (parsed: ParsedWhatsAppChat) => Promise<{ customerId: string }>;
 
   // orders
   orders: Order[];
@@ -73,6 +81,14 @@ const Ctx = createContext<AppCtx | null>(null);
 export const BUSINESS_LIST = ["Kedai Maju Enterprise", "Siti's Bakehouse", "RajTech Solutions"];
 
 const BUSINESSES = BUSINESS_LIST;
+
+function sortChats(chats: ChatThread[]): ChatThread[] {
+  return [...chats].sort((a, b) => {
+    const ta = a.messages[a.messages.length - 1]?.timestamp || 0;
+    const tb = b.messages[b.messages.length - 1]?.timestamp || 0;
+    return tb - ta;
+  });
+}
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<"light" | "dark">("light");
@@ -133,7 +149,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const s = localStorage.getItem("ba_settings");
     if (s) {
       try {
-        setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(s) });
+        const parsed = JSON.parse(s) as Partial<Settings>;
+        setSettings({ ...DEFAULT_SETTINGS, ...parsed, apiKey: "" });
       } catch (err: unknown) {
         console.debug("Failed to parse stored settings:", err);
       }
@@ -152,11 +169,56 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (typeof window !== "undefined") localStorage.setItem("ba_business", business);
   }, [business]);
   useEffect(() => {
-    if (typeof window !== "undefined")
-      localStorage.setItem("ba_settings", JSON.stringify(settings));
+    if (typeof window !== "undefined") {
+      localStorage.setItem(
+        "ba_settings",
+        JSON.stringify({ ...settings, apiKey: "" } satisfies Settings),
+      );
+    }
   }, [settings]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPersistedChats = async () => {
+      try {
+        const result = await listPersistedChats();
+        if (cancelled || !result.chats.length) return;
+
+        setChats((prev) => {
+          const map = new Map(prev.map((c) => [c.customerId, c]));
+          for (const chat of result.chats) {
+            map.set(chat.customerId, { ...chat, source: chat.source || "supabase" });
+          }
+          return sortChats(Array.from(map.values()));
+        });
+
+        if (!activeChatId) {
+          setActiveChatId(result.chats[0]?.customerId || null);
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.debug("Supabase load skipped:", msg);
+      }
+    };
+
+    void loadPersistedChats();
+
+    return () => {
+      cancelled = true;
+    };
+    // intentionally run only once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const toggleTheme = () => setTheme((t) => (t === "light" ? "dark" : "light"));
+
+  const persistThread = (thread: ChatThread) => {
+    void upsertPersistedChat({ data: { thread } }).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.debug("Failed to persist chat:", msg);
+    });
+  };
 
   const sendAgentMessage = (customerId: string, text: string) => {
     const now = new Date();
@@ -173,17 +235,61 @@ export function AppProvider({ children }: { children: ReactNode }) {
       time,
       timestamp: now.getTime(),
     };
-    setChats((prev) =>
-      prev.map((c) =>
+    setChats((prev) => {
+      const next = prev.map((c) =>
         c.customerId === customerId
-          ? { ...c, messages: [...c.messages, msg], waitingMinutes: 0, lastMessagePreview: text }
+          ? {
+              ...c,
+              messages: [...c.messages, msg],
+              waitingMinutes: 0,
+              lastMessagePreview: text,
+            }
           : c,
-      ),
-    );
+      );
+      const updated = next.find((c) => c.customerId === customerId);
+      if (updated) persistThread(updated);
+      return sortChats(next);
+    });
   };
 
   const markChatRead = (customerId: string) => {
-    setChats((prev) => prev.map((c) => (c.customerId === customerId ? { ...c, unread: 0 } : c)));
+    setChats((prev) => {
+      const next = prev.map((c) => (c.customerId === customerId ? { ...c, unread: 0 } : c));
+      const updated = next.find((c) => c.customerId === customerId);
+      if (updated) persistThread(updated);
+      return next;
+    });
+  };
+
+  const importWhatsAppChat = async (parsed: ParsedWhatsAppChat) => {
+    const customerId = makeCustomerId(parsed.customerName);
+    const initials = makeInitials(parsed.customerName);
+    const avatarColor = avatarColorFromSeed(parsed.customerName);
+    const last = parsed.messages[parsed.messages.length - 1];
+    const now = Date.now();
+    const waitingMinutes =
+      last?.from === "customer" ? Math.max(0, Math.floor((now - last.timestamp) / 60000)) : 0;
+
+    const thread: ChatThread = {
+      customerId,
+      customerName: parsed.customerName,
+      customerPhone: parsed.customerPhone,
+      customerAvatarColor: avatarColor,
+      customerInitials: initials,
+      source: "whatsapp-import",
+      flagged: waitingMinutes >= 15 ? "critical" : waitingMinutes >= 5 ? "warning" : null,
+      unread: 0,
+      status: "open",
+      waitingMinutes,
+      lastMessagePreview: last?.text || "Imported WhatsApp chat",
+      messages: parsed.messages,
+    };
+
+    setChats((prev) => sortChats([thread, ...prev]));
+    setActiveChatId(customerId);
+    persistThread(thread);
+
+    return { customerId };
   };
 
   const updateOrderStatus = (id: string, status: Order["status"]) => {
@@ -216,6 +322,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setActiveChatId,
       sendAgentMessage,
       markChatRead,
+      importWhatsAppChat,
       orders,
       updateOrderStatus,
       meetings,

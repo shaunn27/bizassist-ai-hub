@@ -12,14 +12,16 @@ import {
   X,
   ChevronRight,
   Loader2,
+  Upload,
 } from "lucide-react";
 import { useApp } from "@/lib/appContext";
 import { useAI } from "@/hooks/useAI";
-import { mockCustomers } from "@/data/mockCustomers";
+import { mockCustomers, type Customer } from "@/data/mockCustomers";
 import { mockProducts } from "@/data/mockProducts";
 import { mockMeetings } from "@/data/mockMeetings";
 import { formatChatForAI, buildContextBlock } from "@/utils/formatChat";
 import type { AIAnalysis } from "@/utils/parseAIResponse";
+import { parseWhatsAppExport } from "@/utils/parseWhatsAppExport";
 import { SLATimer } from "@/components/shared/SLATimer";
 import { Badge } from "@/components/shared/Badge";
 import { Modal, toast } from "@/components/shared/Toast";
@@ -28,6 +30,34 @@ import { playPing } from "@/hooks/useSound";
 
 type AIChatMsg = { role: "user" | "assistant"; content: string };
 
+function makeFallbackCustomer(chat: {
+  customerId: string;
+  customerName?: string;
+  customerPhone?: string;
+  customerAvatarColor?: string;
+  customerInitials?: string;
+  lastMessagePreview: string;
+}): Customer {
+  return {
+    id: chat.customerId,
+    name: chat.customerName || "Imported Contact",
+    phone: chat.customerPhone || "Unknown",
+    avatarColor: chat.customerAvatarColor || "#2563eb",
+    initials: chat.customerInitials || "IC",
+    loyalSince: "Imported",
+    totalOrders: 0,
+    totalSpent: 0,
+    lastActive: "Today",
+    status: "Active",
+    preferredProducts: [],
+    avgOrderValue: 0,
+    behaviorSummary:
+      "This customer was imported from a WhatsApp export. Profile enrichment will improve after more interactions.",
+    orderHistory: [],
+    lastConversationExcerpt: chat.lastMessagePreview,
+  };
+}
+
 export function MessagesPage() {
   const {
     chats,
@@ -35,6 +65,7 @@ export function MessagesPage() {
     setActiveChatId,
     sendAgentMessage,
     markChatRead,
+    importWhatsAppChat,
     settings,
     addNotification,
   } = useApp();
@@ -48,8 +79,15 @@ export function MessagesPage() {
   const [chatInput, setChatInput] = useState("");
   const [escalateOpen, setEscalateOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [customerNameOverride, setCustomerNameOverride] = useState("");
+  const [agentNamesInput, setAgentNamesInput] = useState("You, Me, Agent");
+  const [importing, setImporting] = useState(false);
   const [showAnalysisBanner, setShowAnalysisBanner] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const analysisBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const importFileRef = useRef<HTMLInputElement>(null);
 
   // Simulate one new message arriving 30s after load (Nurul Hana)
   useEffect(() => {
@@ -73,86 +111,81 @@ export function MessagesPage() {
     // eslint-disable-next-line
   }, [activeChatId]);
 
-  // Hardcoded AI analysis for c1 (Ah Kow) so the demo path works without an API key
-  useEffect(() => {
-    if (!analyses["c1"]) {
-      setAnalyses((prev) => ({
-        ...prev,
-        c1: {
-          detectedLanguage: "Manglish",
-          confidenceScore: 87,
-          requestType: "Order",
-          orderSummary: {
-            items: ["Premium Chocolate Box (assumed)"],
-            quantity: "2 boxes",
-            deliveryAddress: null,
-            deadline: "Friday",
-            specialInstructions: "Urgent",
-            missingFields: [
-              "Delivery address (referenced 'same as last time' — needs verification)",
-              "Payment confirmation",
-            ],
-          },
-          confirmedDetails: ["Customer wants 2 boxes of chocolate", "Required by Friday"],
-          unclearItems: [
-            {
-              issue: "'same as last time' reference",
-              whyItMatters:
-                "Customer expects address & product variant to match a previous order, but last order was 2x Premium Chocolate to Cheras — confirm before processing.",
-              whatToAsk: "Confirm: deliver to <address> and same Premium Chocolate Box variant?",
-            },
-          ],
-          flags: [
-            {
-              severity: "critical",
-              type: "UNRESPONDED",
-              description:
-                "Customer has been waiting 18 minutes with no agent reply. SLA breached.",
-            },
-            {
-              severity: "warning",
-              type: "AMBIGUOUS_REFERENCE",
-              description: "'same as last time' — verify address and product.",
-            },
-            {
-              severity: "info",
-              type: "VOICE_NOTE_UNHEARD",
-              description: "Customer sent a voice note that has not been acknowledged.",
-            },
-          ],
-          suggestedReply:
-            "Hi Boss! Confirmed 2 box Premium Chocolate, RM30. Hantar Friday ke alamat sama macam last time (Jln Cheras 5/2)? Reply 'YES' kami proses sekarang.",
-          agentChecklist: [
-            "Verify delivery address with customer (don't assume)",
-            "Listen to the voice note before replying",
-            "Confirm product variant matches last order",
-            "Send order confirmation with total RM30",
-            "Mark order as Confirmed in Orders board",
-          ],
-          customerBehaviorNote:
-            "Repeat buyer — orders chocolate weekly, prefers Manglish, expects fast turnaround. Risk of churn if response time > 30 min.",
-        },
-      }));
+  const customersById = useMemo(() => {
+    const map = new Map<string, Customer>(mockCustomers.map((c) => [c.id, c]));
+    for (const c of chats) {
+      if (!map.has(c.customerId)) {
+        map.set(c.customerId, makeFallbackCustomer(c));
+      }
     }
-    // eslint-disable-next-line
-  }, []);
+    return map;
+  }, [chats]);
 
   const filteredChats = useMemo(() => {
     return chats.filter((c) => {
-      const cust = mockCustomers.find((x) => x.id === c.customerId);
+      const cust = customersById.get(c.customerId);
       if (!cust) return false;
       return cust.name.toLowerCase().includes(search.toLowerCase());
     });
-  }, [chats, search]);
+  }, [chats, customersById, search]);
 
   const activeChat = chats.find((c) => c.customerId === activeChatId);
-  const activeCustomer = mockCustomers.find((c) => c.id === activeChatId);
+  const activeCustomer = activeChatId ? customersById.get(activeChatId) : undefined;
   const activeAnalysis = activeChatId ? analyses[activeChatId] : null;
   const activeAiChat = activeChatId ? aiChats[activeChatId] || [] : [];
+
+  const handleImportChat = async () => {
+    if (!importText.trim()) {
+      toast("Paste WhatsApp exported text or upload a .txt file first.", "error");
+      return;
+    }
+
+    setImporting(true);
+    try {
+      const parsed = parseWhatsAppExport(importText, {
+        customerNameOverride: customerNameOverride.trim() || undefined,
+        agentNames: agentNamesInput
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+      });
+
+      const result = await importWhatsAppChat(parsed);
+      setImportOpen(false);
+      setImportText("");
+      setCustomerNameOverride("");
+      toast(`Imported chat for ${parsed.customerName}`, "success");
+      setActiveChatId(result.customerId);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to import chat";
+      toast(message, "error");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const onUploadFile = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      setImportText(text);
+      toast("WhatsApp export loaded. Review and import.", "success");
+    } catch {
+      toast("Could not read file.", "error");
+    }
+  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [activeChatId, activeChat?.messages.length]);
+
+  useEffect(() => {
+    return () => {
+      if (analysisBannerTimerRef.current) {
+        clearTimeout(analysisBannerTimerRef.current);
+      }
+    };
+  }, []);
 
   const productCatalogStr = mockProducts
     .map(
@@ -171,7 +204,10 @@ export function MessagesPage() {
     if (!activeChat || !activeChatId) return;
     setShowAnalysisBanner(true);
     setAnalyzing(true);
-    setTimeout(() => setShowAnalysisBanner(false), 5000);
+    if (analysisBannerTimerRef.current) {
+      clearTimeout(analysisBannerTimerRef.current);
+    }
+    analysisBannerTimerRef.current = setTimeout(() => setShowAnalysisBanner(false), 5000);
     const formatted = formatChatForAI(activeChat.messages, activeCustomer);
     const result = await analyze(formatted, ctxBlock);
     setAnalyzing(false);
@@ -231,10 +267,16 @@ export function MessagesPage() {
               className="w-full h-9 pl-8 pr-3 rounded-md bg-background border border-border text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             />
           </div>
+          <button
+            onClick={() => setImportOpen(true)}
+            className="mt-2 w-full h-9 rounded-md border border-border text-xs font-semibold hover:bg-accent inline-flex items-center justify-center gap-1.5"
+          >
+            <Upload className="h-3.5 w-3.5" /> Import WhatsApp Chat
+          </button>
         </div>
         <div className="flex-1 overflow-y-auto">
           {filteredChats.map((c) => {
-            const cust = mockCustomers.find((x) => x.id === c.customerId)!;
+            const cust = customersById.get(c.customerId) || makeFallbackCustomer(c);
             const isActive = c.customerId === activeChatId;
             return (
               <button
@@ -557,6 +599,88 @@ export function MessagesPage() {
           </div>
         </div>
       </Modal>
+
+      <Modal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        title="Import WhatsApp Export"
+        footer={
+          <>
+            <button
+              onClick={() => setImportOpen(false)}
+              className="h-9 px-4 rounded-md border border-border text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleImportChat}
+              disabled={importing}
+              className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-60"
+            >
+              {importing ? "Importing..." : "Import Chat"}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-foreground">Upload .txt export</label>
+            <div className="mt-1 flex gap-2">
+              <input
+                ref={importFileRef}
+                type="file"
+                accept=".txt,text/plain"
+                className="hidden"
+                onChange={(e) => void onUploadFile(e.target.files?.[0])}
+              />
+              <button
+                onClick={() => importFileRef.current?.click()}
+                className="h-9 px-3 rounded-md border border-border text-xs font-semibold hover:bg-accent"
+              >
+                Choose File
+              </button>
+              <span className="text-[11px] text-muted-foreground self-center">
+                WhatsApp exported chat file
+              </span>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-foreground">Customer name (optional)</label>
+            <input
+              value={customerNameOverride}
+              onChange={(e) => setCustomerNameOverride(e.target.value)}
+              className="mt-1 w-full h-9 px-3 rounded-md border border-border bg-background text-sm"
+              placeholder="Override inferred contact name"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-foreground">
+              Agent names (comma separated)
+            </label>
+            <input
+              value={agentNamesInput}
+              onChange={(e) => setAgentNamesInput(e.target.value)}
+              className="mt-1 w-full h-9 px-3 rounded-md border border-border bg-background text-sm"
+              placeholder="You, Me, Agent"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-foreground">
+              Paste WhatsApp export text
+            </label>
+            <textarea
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+              rows={8}
+              className="mt-1 w-full px-3 py-2 rounded-md border border-border bg-background text-xs font-mono"
+              placeholder="Paste exported chat content here"
+            />
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -599,7 +723,7 @@ function AnalysisTab({
   }
   if (!analysis) return null;
 
-  const sevColor = (s: string) =>
+  const sevColor = (s: string): "danger" | "warning" | "primary" =>
     s === "critical" ? "danger" : s === "warning" ? "warning" : "primary";
 
   return (
@@ -673,13 +797,7 @@ function AnalysisTab({
                 )}
               >
                 <div className="flex items-center gap-1.5">
-                  <Badge
-                    variant={
-                      sevColor(f.severity) as "default" | "secondary" | "destructive" | "outline"
-                    }
-                  >
-                    {f.severity.toUpperCase()}
-                  </Badge>
+                  <Badge variant={sevColor(f.severity)}>{f.severity.toUpperCase()}</Badge>
                   <span className="text-[11px] font-bold text-foreground">{f.type}</span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">{f.description}</p>

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CheckCircle2, AlertCircle, X } from "lucide-react";
 
 type ToastItem = { id: number; text: string; type: "success" | "error" | "info" };
@@ -11,13 +11,31 @@ export function toast(text: string, type: ToastItem["type"] = "success") {
 
 export function ToastHost() {
   const [items, setItems] = useState<ToastItem[]>([]);
+  const timeoutMapRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+  const dismiss = (id: number) => {
+    const timeoutId = timeoutMapRef.current.get(id);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutMapRef.current.delete(id);
+    }
+    setItems((cur) => cur.filter((x) => x.id !== id));
+  };
+
   useEffect(() => {
+    const timeoutMap = timeoutMapRef.current;
     pushFn = (t) => {
       const id = Date.now() + Math.random();
       setItems((cur) => [...cur, { ...t, id }]);
-      setTimeout(() => setItems((cur) => cur.filter((x) => x.id !== id)), 3000);
+      const timeoutId = setTimeout(() => {
+        timeoutMap.delete(id);
+        setItems((cur) => cur.filter((x) => x.id !== id));
+      }, 3000);
+      timeoutMap.set(id, timeoutId);
     };
     return () => {
+      timeoutMap.forEach((timeoutId) => clearTimeout(timeoutId));
+      timeoutMap.clear();
       pushFn = null;
     };
   }, []);
@@ -37,7 +55,7 @@ export function ToastHost() {
           )}
           <span className="text-sm text-foreground flex-1">{t.text}</span>
           <button
-            onClick={() => setItems((cur) => cur.filter((x) => x.id !== t.id))}
+            onClick={() => dismiss(t.id)}
             className="text-muted-foreground hover:text-foreground"
           >
             <X className="h-4 w-4" />
