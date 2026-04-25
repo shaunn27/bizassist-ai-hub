@@ -23,7 +23,7 @@ export type Settings = {
 
 const DEFAULT_SETTINGS: Settings = {
   apiKey: "",
-  model: "claude-sonnet-4-20250514",
+  model: "ilmu-glm-5.1",
   soundOnNewMessage: true,
   sla5: true,
   sla15: true,

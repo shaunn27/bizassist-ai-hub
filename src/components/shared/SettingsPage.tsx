@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useApp, BUSINESS_LIST } from "@/lib/appContext";
+import { testAIModel } from "@/hooks/useAI";
 import { Eye, EyeOff } from "lucide-react";
 import { toast } from "@/components/shared/Toast";
 import { Badge } from "@/components/shared/Badge";
@@ -7,14 +8,37 @@ import { Badge } from "@/components/shared/Badge";
 export function SettingsPage() {
   const { settings, updateSettings, business, setBusiness } = useApp();
   const [show, setShow] = useState(false);
+  const [testPrompt, setTestPrompt] = useState("Reply with one short sentence about customer support.");
+  const [testResult, setTestResult] = useState("");
+  const [testing, setTesting] = useState(false);
+
+  const modelOptions = ["ilmu-glm-5.1"];
+  const selectedModel = settings.model || modelOptions[0];
 
   const test = async () => {
     if (!settings.apiKey) {
       toast("Enter an API key first", "error");
       return;
     }
-    toast("Testing connection...", "info");
-    setTimeout(() => toast("✓ Connection looks good (key format valid)", "success"), 600);
+
+    setTesting(true);
+    setTestResult("");
+    toast("Running live model test...", "info");
+
+    try {
+      const reply = await testAIModel({
+        apiKey: settings.apiKey,
+        model: selectedModel,
+        prompt: testPrompt,
+      });
+      setTestResult(reply);
+      toast("Live test succeeded", "success");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast(message, "error");
+    } finally {
+      setTesting(false);
+    }
   };
 
   const Toggle = ({
@@ -44,14 +68,14 @@ export function SettingsPage() {
       <div className="max-w-2xl mx-auto space-y-5">
         <div className="bg-card border border-border rounded-xl p-5">
           <h3 className="font-semibold text-foreground mb-3">API Configuration</h3>
-          <label className="text-xs font-medium text-muted-foreground">Anthropic API Key</label>
+          <label className="text-xs font-medium text-muted-foreground">ILMU API Key</label>
           <div className="mt-1 flex gap-2">
             <div className="flex-1 relative">
               <input
                 type={show ? "text" : "password"}
                 value={settings.apiKey}
                 onChange={(e) => updateSettings({ apiKey: e.target.value })}
-                placeholder="sk-ant-..."
+                placeholder="sk-..."
                 className="w-full h-10 px-3 pr-10 rounded-md border border-border bg-background text-sm font-mono"
               />
               <button
@@ -63,21 +87,42 @@ export function SettingsPage() {
             </div>
             <button
               onClick={test}
+              disabled={testing || !testPrompt.trim()}
               className="h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-semibold"
             >
-              Test
+              {testing ? "Testing..." : "Run Live Test"}
             </button>
           </div>
+
           <label className="text-xs font-medium text-muted-foreground mt-3 block">Model</label>
           <select
-            value={settings.model}
+            value={selectedModel}
             onChange={(e) => updateSettings({ model: e.target.value })}
             className="mt-1 w-full h-10 px-3 rounded-md border border-border bg-background text-sm"
           >
-            <option value="claude-sonnet-4-20250514">claude-sonnet-4-20250514</option>
-            <option value="claude-3-5-sonnet-20241022">claude-3-5-sonnet-20241022</option>
-            <option value="claude-3-5-haiku-20241022">claude-3-5-haiku-20241022</option>
+            {!modelOptions.includes(selectedModel) && <option value={selectedModel}>{selectedModel}</option>}
+            {modelOptions.map((model) => (
+              <option key={model} value={model}>
+                {model}
+              </option>
+            ))}
           </select>
+
+          <label className="text-xs font-medium text-muted-foreground mt-3 block">Test prompt</label>
+          <textarea
+            value={testPrompt}
+            onChange={(e) => setTestPrompt(e.target.value)}
+            rows={3}
+            className="mt-1 w-full px-3 py-2 rounded-md border border-border bg-background text-sm"
+            placeholder="Type text to send to the model..."
+          />
+
+          {testResult && (
+            <div className="mt-3 p-3 rounded-md border border-border bg-secondary/40">
+              <div className="text-xs font-medium text-muted-foreground mb-1">Model response</div>
+              <p className="text-sm text-foreground whitespace-pre-wrap">{testResult}</p>
+            </div>
+          )}
         </div>
 
         <div className="bg-card border border-border rounded-xl p-5">
