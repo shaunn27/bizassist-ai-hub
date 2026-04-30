@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { mockChats, type ChatThread, type ChatMessage } from "@/data/mockChats";
 import { mockOrders, type Order } from "@/data/mockOrders";
 import { mockMeetings, type Meeting } from "@/data/mockMeetings";
-import { listPersistedChats, upsertPersistedChat } from "@/server/chat.functions";
+import { listPersistedChats, upsertPersistedChat } from "@/lib/apiClient";
 import {
   avatarColorFromSeed,
   makeCustomerId,
@@ -288,7 +288,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const persistThread = (thread: ChatThread) => {
-    void upsertPersistedChat({ data: { thread } }).catch((err: unknown) => {
+    void upsertPersistedChat(thread).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
       console.debug("Failed to persist chat:", msg);
     });

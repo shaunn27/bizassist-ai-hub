@@ -28,10 +28,7 @@ import { Badge } from "@/components/shared/Badge";
 import { Modal, toast } from "@/components/shared/Toast";
 import { cn } from "@/lib/utils";
 import { playPing } from "@/hooks/useSound";
-import {
-  persistConfirmedOrder,
-  persistConfirmedMeeting,
-} from "@/server/action.functions";
+import { persistConfirmedOrder, persistConfirmedMeeting } from "@/lib/apiClient";
 
 type AIChatMsg = { role: "user" | "assistant"; content: string };
 
@@ -236,13 +233,11 @@ export function MessagesPage() {
           chatExcerpt: activeChat.lastMessagePreview,
         });
         await persistConfirmedOrder({
-          data: {
-            customerName: activeCustomer.name,
-            customerPhone: activeCustomer.phone,
-            items: proposal.orderDraft.items,
-            total: proposal.orderDraft.total ?? 0,
-            chatExcerpt: activeChat.lastMessagePreview,
-          },
+          customerName: activeCustomer.name,
+          customerPhone: activeCustomer.phone,
+          items: proposal.orderDraft.items,
+          total: proposal.orderDraft.total ?? 0,
+          chatExcerpt: activeChat.lastMessagePreview,
         });
         toast(`Order confirmed: ${order.id}`, "success");
         return;
@@ -258,14 +253,12 @@ export function MessagesPage() {
           purpose: proposal.meetingDraft.purpose,
         });
         await persistConfirmedMeeting({
-          data: {
-            customerName: activeCustomer.name,
-            customerPhone: activeCustomer.phone,
-            date: proposal.meetingDraft.date,
-            time: proposal.meetingDraft.time,
-            duration: proposal.meetingDraft.duration,
-            purpose: proposal.meetingDraft.purpose,
-          },
+          customerName: activeCustomer.name,
+          customerPhone: activeCustomer.phone,
+          date: proposal.meetingDraft.date,
+          time: proposal.meetingDraft.time,
+          duration: proposal.meetingDraft.duration,
+          purpose: proposal.meetingDraft.purpose,
         });
         toast(`Meeting scheduled: ${meeting.id}`, "success");
         return;

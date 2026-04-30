@@ -16,11 +16,6 @@ export function SettingsPage() {
   const selectedModel = settings.model || modelOptions[0];
 
   const test = async () => {
-    if (!settings.apiKey) {
-      toast("Enter an API key first", "error");
-      return;
-    }
-
     setTesting(true);
     setTestResult("");
     toast("Running live model test...", "info");

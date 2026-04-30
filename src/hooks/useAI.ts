@@ -7,7 +7,7 @@ import {
   chatWithAiAssistant,
   generateChatActionPlan,
   testIlmuConnection,
-} from "@/server/ai.functions";
+} from "@/lib/apiClient";
 
 const DEFAULT_MODEL = "ilmu-glm-5.1";
 
@@ -16,18 +16,15 @@ export async function testAIModel(opts: {
   model?: string;
   prompt: string;
 }): Promise<string> {
-  const key = opts.apiKey.trim();
+  const key = (opts.apiKey || "").trim();
   const prompt = opts.prompt.trim();
-  if (!key) throw new Error("Missing API key. Add it in Settings first.");
   if (!prompt) throw new Error("Please enter text to test.");
 
   const result = await chatWithAiAssistant({
-    data: {
-      apiKey: key,
-      model: opts.model?.trim() || DEFAULT_MODEL,
-      contextBlock: "",
-      history: [{ role: "user", content: prompt }],
-    },
+    apiKey: key,
+    model: opts.model?.trim() || DEFAULT_MODEL,
+    contextBlock: "",
+    history: [{ role: "user", content: prompt }],
   });
 
   if (!result.reply?.trim()) {
@@ -52,12 +49,10 @@ export function useAI() {
       setError(null);
       try {
         return await analyzeConversation({
-          data: {
-            apiKey: resolveApiKey(),
-            model: resolveModel(),
-            formattedConversation,
-            contextBlock,
-          },
+          apiKey: resolveApiKey(),
+          model: resolveModel(),
+          formattedConversation,
+          contextBlock,
         });
       } catch (e: unknown) {
         const error = e instanceof Error ? e : new Error(String(e));
@@ -79,12 +74,10 @@ export function useAI() {
       setError(null);
       try {
         const response = await chatWithAiAssistant({
-          data: {
-            apiKey: resolveApiKey(),
-            model: resolveModel(),
-            contextBlock,
-            history,
-          },
+          apiKey: resolveApiKey(),
+          model: resolveModel(),
+          contextBlock,
+          history,
         });
         return response.reply;
       } catch (e: unknown) {
@@ -104,12 +97,10 @@ export function useAI() {
       setError(null);
       try {
         return await generateChatActionPlan({
-          data: {
-            apiKey: resolveApiKey(),
-            model: resolveModel(),
-            formattedConversation,
-            contextBlock,
-          },
+          apiKey: resolveApiKey(),
+          model: resolveModel(),
+          formattedConversation,
+          contextBlock,
         });
       } catch (e: unknown) {
         const error = e instanceof Error ? e : new Error(String(e));
@@ -127,10 +118,8 @@ export function useAI() {
     setError(null);
     try {
       return await testIlmuConnection({
-        data: {
-          apiKey: resolveApiKey(),
-          model: resolveModel(),
-        },
+        apiKey: resolveApiKey(),
+        model: resolveModel(),
       });
     } catch (e: unknown) {
       const error = e instanceof Error ? e : new Error(String(e));
