@@ -1,15 +1,14 @@
 import { useCallback, useState } from "react";
 import { useApp } from "@/lib/appContext";
-import { type AIAnalysis } from "@/utils/parseAIResponse";
 import { type ChatActionPlan } from "@/utils/chatActions";
 import {
   analyzeConversation,
   chatWithAiAssistant,
   generateChatActionPlan,
-  testIlmuConnection,
+  testGeminiConnection,
 } from "@/server/ai.functions";
 
-const DEFAULT_MODEL = "ilmu-glm-5.1";
+const DEFAULT_MODEL = "gemini-2.5-flash";
 
 export async function testAIModel(opts: {
   apiKey: string;
@@ -47,7 +46,7 @@ export function useAI() {
   const resolveModel = useCallback(() => settings.model?.trim() || DEFAULT_MODEL, [settings.model]);
 
   const analyze = useCallback(
-    async (formattedConversation: string, contextBlock = ""): Promise<AIAnalysis | null> => {
+    async (formattedConversation: string, contextBlock = ""): Promise<string | null> => {
       setLoading(true);
       setError(null);
       try {
@@ -126,7 +125,7 @@ export function useAI() {
     setLoading(true);
     setError(null);
     try {
-      return await testIlmuConnection({
+      return await testGeminiConnection({
         data: {
           apiKey: resolveApiKey(),
           model: resolveModel(),

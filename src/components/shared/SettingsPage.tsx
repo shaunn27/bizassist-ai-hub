@@ -12,7 +12,7 @@ export function SettingsPage() {
   const [testResult, setTestResult] = useState("");
   const [testing, setTesting] = useState(false);
 
-  const modelOptions = ["ilmu-glm-5.1"];
+  const modelOptions = ["gemini-2.5-flash"];
   const selectedModel = settings.model || modelOptions[0];
 
   const test = async () => {
@@ -68,14 +68,14 @@ export function SettingsPage() {
       <div className="max-w-2xl mx-auto space-y-5">
         <div className="bg-card border border-border rounded-xl p-5">
           <h3 className="font-semibold text-foreground mb-3">API Configuration</h3>
-          <label className="text-xs font-medium text-muted-foreground">ILMU API Key</label>
+          <label className="text-xs font-medium text-muted-foreground">Gemini API Key</label>
           <div className="mt-1 flex gap-2">
             <div className="flex-1 relative">
               <input
                 type={show ? "text" : "password"}
                 value={settings.apiKey}
                 onChange={(e) => updateSettings({ apiKey: e.target.value })}
-                placeholder="sk-..."
+                placeholder="AIza..."
                 className="w-full h-10 px-3 pr-10 rounded-md border border-border bg-background text-sm font-mono"
               />
               <button

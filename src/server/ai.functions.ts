@@ -1,28 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { SYSTEM_PROMPT } from "@/lib/systemPrompt";
-import { parseAIResponse, type AIAnalysis } from "@/utils/parseAIResponse";
 import { parseChatActionPlan, type ChatActionPlan } from "@/utils/chatActions";
 
-const ILMU_CHAT_URL = "https://api.ilmu.ai/v1/chat/completions";
-const ILMU_MODELS_URL = "https://api.ilmu.ai/v1/models";
-const DEFAULT_MODEL = "ilmu-glm-5.1";
+const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
+const DEFAULT_MODEL = "gemini-2.5-flash";
 
 const messageSchema = z.object({
   role: z.enum(["user", "assistant"]),
   content: z.string().min(1),
-});
-
-const chatResponseSchema = z.object({
-  choices: z
-    .array(
-      z.object({
-        message: z.object({
-          content: z.string().optional().default(""),
-        }),
-      }),
-    )
-    .min(1),
 });
 
 async function readApiError(res: Response): Promise<string> {
@@ -38,32 +23,64 @@ async function readApiError(res: Response): Promise<string> {
 
 function requireApiKey(apiKey: string): string {
   const envKey =
-    (typeof process !== "undefined" ? process.env.ILMU_API_KEY : undefined) ||
-    (typeof process !== "undefined" ? process.env.VITE_ILMU_API_KEY : undefined) ||
+    (typeof process !== "undefined" ? process.env.GEMINI_API_KEY : undefined) ||
+    (typeof process !== "undefined" ? process.env.VITE_GEMINI_API_KEY : undefined) ||
     "";
   const key = (apiKey || "").trim() || envKey.trim();
   if (!key) throw new Error("Missing API key. Set it in Settings first.");
   return key;
 }
 
-async function callIlmuChat(opts: {
+function stripModelPrefix(name: string | undefined): string {
+  if (!name) return "";
+  return name.replace(/^models\//, "");
+}
+
+function toGeminiContents(messages: Array<{ role: "user" | "assistant"; content: string }>) {
+  return messages.map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: m.content }],
+  }));
+}
+
+function extractGeminiText(payload: unknown): string {
+  if (!payload || typeof payload !== "object") return "";
+  const candidates = (payload as { candidates?: Array<{ content?: { parts?: unknown[] } }> })
+    .candidates;
+  const parts = candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts)) return "";
+  return parts
+    .map((part) => {
+      if (!part || typeof part !== "object") return "";
+      const text = (part as { text?: unknown }).text;
+      return typeof text === "string" ? text : "";
+    })
+    .join("\n")
+    .trim();
+}
+
+async function callGeminiChat(opts: {
   apiKey: string;
   model: string;
   systemPrompt?: string;
   messages: Array<{ role: "user" | "assistant"; content: string }>;
   maxTokens?: number;
 }): Promise<string> {
-  const res = await fetch(ILMU_CHAT_URL, {
+  const model = opts.model || DEFAULT_MODEL;
+  const res = await fetch(`${GEMINI_BASE_URL}/models/${model}:generateContent?key=${opts.apiKey}`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${opts.apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: opts.model || DEFAULT_MODEL,
-      max_tokens: opts.maxTokens ?? 1500,
-      ...(opts.systemPrompt ? { system: opts.systemPrompt } : {}),
-      messages: opts.messages,
+      contents: toGeminiContents(opts.messages),
+      ...(opts.systemPrompt
+        ? { systemInstruction: { parts: [{ text: opts.systemPrompt }] } }
+        : {}),
+      generationConfig: {
+        maxOutputTokens: opts.maxTokens ?? 1500,
+        temperature: 0.2,
+      },
     }),
   });
 
@@ -72,15 +89,11 @@ async function callIlmuChat(opts: {
     throw new Error(`AI request failed (${res.status}): ${detail}`);
   }
 
-  const parsed = chatResponseSchema.safeParse(await res.json());
-  if (!parsed.success) {
-    throw new Error("AI provider response format is invalid.");
-  }
-
-  return parsed.data.choices[0]?.message.content?.trim() || "";
+  const payload = await res.json();
+  return extractGeminiText(payload);
 }
 
-export const testIlmuConnection = createServerFn({ method: "POST" })
+export const testGeminiConnection = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
       apiKey: z.string().optional().default(""),
@@ -90,9 +103,8 @@ export const testIlmuConnection = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const apiKey = requireApiKey(data.apiKey);
 
-    const modelsRes = await fetch(ILMU_MODELS_URL, {
+    const modelsRes = await fetch(`${GEMINI_BASE_URL}/models?key=${apiKey}`, {
       method: "GET",
-      headers: { Authorization: `Bearer ${apiKey}` },
     });
 
     if (!modelsRes.ok) {
@@ -101,22 +113,18 @@ export const testIlmuConnection = createServerFn({ method: "POST" })
     }
 
     const modelResponse = (await modelsRes.json()) as {
-      data?: Array<{ id?: string }>;
+      models?: Array<{ name?: string }>;
     };
-    const availableModels = (modelResponse.data || [])
-      .map((m) => m.id)
-      .filter((id): id is string => !!id);
+    const availableModels = (modelResponse.models || [])
+      .map((m) => stripModelPrefix(m.name))
+      .filter((name): name is string => !!name);
 
     const requestedModel = data.model?.trim() || DEFAULT_MODEL;
     const selectedModel = availableModels.includes(requestedModel)
       ? requestedModel
       : (availableModels[0] ?? requestedModel);
 
-    return {
-      ok: true,
-      selectedModel,
-      availableModels,
-    };
+    return { ok: true, selectedModel, availableModels };
   });
 
 export const analyzeConversation = createServerFn({ method: "POST" })
@@ -128,33 +136,80 @@ export const analyzeConversation = createServerFn({ method: "POST" })
       contextBlock: z.string().optional().default(""),
     }),
   )
-  .handler(async ({ data }): Promise<AIAnalysis> => {
+  .handler(async ({ data }): Promise<string> => {
     const apiKey = requireApiKey(data.apiKey);
 
     const userText = [
+      "Adjusted Prompt",
+      "Analyze the chat history between a customer and an agent (user). Extract only the important business-related items. Output them in the following plain key-value format - no tables, no markdown, no extra decoration.",
+      "",
+      "Use these categories only if data exists:",
+      "",
+      "ORDERS",
+      "For each order:",
+      "Order ID - [value]",
+      "Item - [value]",
+      "Qty - [number]",
+      "Delivery Deadline - [date or \"null\"]",
+      "Status - [value]",
+      "",
+      "MEETINGS",
+      "For each meeting:",
+      "Date - [actual date, calculate from relative terms like \"tomorrow\" using chat date][YYYY-MM-DD or \"null\"]",
+      "Time - [HH:MM AM/PM or \"null\"]",
+      "Attendees - [comma separated]",
+      "Purpose - [short text]",
+      "",
+      "DECISIONS",
+      "For each decision:",
+      "- [short text]",
+      "",
+      "DEADLINES",
+      "For each deadline:",
+      "[clear task name description] - [date]",
+      "",
+      "ISSUES / RISKS",
+      "For each issue:",
+      "- [short text]",
+      "",
+      "PAYMENTS",
+      "If amount not mentioned: Amount - Not specified",
+      "For each payment:",
+      "Payer - [name]",
+      "Amount - [number or \"null\"]",
+      "Due Date - [date or \"null\"]",
+      "Status - [Paid / Unpaid / Pending]",
+      "",
+      "Rules:",
+      "- Do not use tables, pipes, or markdown.",
+      "- Write each field on a new line.",
+      "- If multiple orders/meetings/payments, separate them with a blank line.",
+      "- If a category is empty, omit it entirely.",
+      "- blank a line after every part",
+      "- easy to see and understand",
+      "- For meeting dates: If a relative day is given (e.g., \"tomorrow\", \"next Tuesday\"), calculate the actual date based on the chat's timestamp. Assume the chat date is the date of the first message.",
+      "- For deadlines: Use the format \"Task Name - Date\". If the task is an order delivery, write \"Order [ID] delivery - [date]\".",
+      "- If an amount is not mentioned, write \"Amount - Not specified\" instead of null.",
+      "",
       data.contextBlock ? `## CONTEXT\n${data.contextBlock}` : "",
-      "## TASK",
-      "Analyze the conversation and return only valid JSON following the required schema.",
       "## CONVERSATION",
       data.formattedConversation,
     ]
       .filter(Boolean)
-      .join("\n\n");
+      .join("\n");
 
-    const raw = await callIlmuChat({
+    const raw = await callGeminiChat({
       apiKey,
       model: data.model,
-      systemPrompt: SYSTEM_PROMPT,
       messages: [{ role: "user", content: userText }],
-      maxTokens: 1800,
+      maxTokens: 4096,
     });
 
-    const parsed = parseAIResponse(raw);
-    if (!parsed) {
-      throw new Error("Model returned non-JSON analysis. Try again or adjust model.");
+    if (!raw.trim()) {
+      throw new Error("Model returned an empty analysis. Try again or adjust model.");
     }
 
-    return parsed;
+    return raw;
   });
 
 export const chatWithAiAssistant = createServerFn({ method: "POST" })
@@ -178,7 +233,7 @@ export const chatWithAiAssistant = createServerFn({ method: "POST" })
         ]
       : [];
 
-    const reply = await callIlmuChat({
+    const reply = await callGeminiChat({
       apiKey,
       model: data.model,
       systemPrompt:
@@ -221,7 +276,7 @@ export const generateChatActionPlan = createServerFn({ method: "POST" })
       .filter(Boolean)
       .join("\n\n");
 
-    const raw = await callIlmuChat({
+    const raw = await callGeminiChat({
       apiKey,
       model: data.model,
       systemPrompt:

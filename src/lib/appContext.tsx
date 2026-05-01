@@ -30,7 +30,7 @@ export type Settings = {
 
 const DEFAULT_SETTINGS: Settings = {
   apiKey: "",
-  model: "ilmu-glm-5.1",
+  model: "gemini-2.5-flash",
   soundOnNewMessage: true,
   sla5: true,
   sla15: true,
