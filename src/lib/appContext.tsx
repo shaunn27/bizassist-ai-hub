@@ -18,8 +18,8 @@ import {
   updateMeetingStatus as persistMeetingStatus,
   updateOrderStatus as persistOrderStatus,
   upsertPersistedChat,
-  simulateCustomerReply,
 } from "@/lib/apiClient";
+import { simulateCustomerReply } from "@/server/customerSimulator";
 import {
   avatarColorFromSeed,
   makeCustomerId,
@@ -558,10 +558,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         // Fire off the simulation API call
         void simulateCustomerReply({
-          customerId,
-          customerName: customer?.name || thread.customerName || "Customer",
-          messages: thread.messages,
-          productCatalog,
+          data: {
+            customerId,
+            customerName: customer?.name || thread.customerName || "Customer",
+            messages: thread.messages,
+            productCatalog,
+          },
         })
           .then((result) => {
             setIsTyping((prev) => ({ ...prev, [customerId]: false }));
