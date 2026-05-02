@@ -20,6 +20,9 @@ import { mockCustomers, type Customer } from "@/data/mockCustomers";
 import { mockProducts } from "@/data/mockProducts";
 import { mockMeetings } from "@/data/mockMeetings";
 import { formatChatForAI, buildContextBlock } from "@/utils/formatChat";
+import type { Order } from "@/data/mockOrders";
+import type { Meeting } from "@/data/mockMeetings";
+import { readActionFile } from "@/server/actionFiles.functions";
 import { parseWhatsAppExport } from "@/utils/parseWhatsAppExport";
 import { Badge } from "@/components/shared/Badge";
 import { Modal, toast } from "@/components/shared/Toast";
@@ -81,6 +84,10 @@ export function MessagesPage() {
   const [analyses, setAnalyses] = useState<Record<string, string | null>>({});
   const [analyzing, setAnalyzing] = useState(false);
   const [planning, setPlanning] = useState(false);
+
+  const [actionOrders, setActionOrders] = useState<Order[]>([]);
+  const [actionMeetings, setActionMeetings] = useState<Meeting[]>([]);
+
   const [aiChats, setAiChats] = useState<Record<string, AIChatMsg[]>>({});
   const [aiInput, setAiInput] = useState("");
   const [chatInput, setChatInput] = useState("");
@@ -240,6 +247,19 @@ export function MessagesPage() {
     };
   }, [activeChatId, activeCustomer, analyses]);
 
+  const loadActions = async () => {
+    if (!activeCustomer) return;
+    const res = await readActionFile({ data: activeCustomer.name });
+    if (res.ok) {
+      setActionOrders(res.orders || []);
+      setActionMeetings(res.meetings || []);
+    }
+  };
+
+  useEffect(() => {
+    void loadActions();
+  }, [activeCustomer]);
+
   const productCatalogStr = mockProducts
     .map(
       (p) => `${p.name} (${p.sku}) RM${p.price} — stock ${p.stock === -1 ? "unlimited" : p.stock}`,
@@ -260,6 +280,7 @@ export function MessagesPage() {
     setPlanning(false);
     if (result.ok && result.filePath) {
       toast(`Actions saved to ${result.filePath}`, "success");
+      void loadActions();
     } else if (result.error) {
       toast(result.error, "error");
     }
@@ -584,6 +605,33 @@ export function MessagesPage() {
           <ActionsTab
             loading={planning}
             onGenerate={generateActionPlan}
+            orders={actionOrders}
+            meetings={actionMeetings}
+            onApproveOrder={(o) => {
+              createOrder({
+                customerId: activeCustomer?.id || "unknown",
+                customerName: activeCustomer?.name || "Unknown",
+                items: o.items,
+                total: o.total,
+                chatExcerpt: o.chatExcerpt,
+              });
+              setActionOrders((prev) => prev.filter((x) => x.id !== o.id));
+              toast(`Approved order`, "success");
+            }}
+            onApproveMeeting={(m) => {
+              createMeeting({
+                customerId: activeCustomer?.id || "unknown",
+                customerName: activeCustomer?.name || "Unknown",
+                date: m.date,
+                time: m.time,
+                duration: m.duration,
+                purpose: m.purpose,
+              });
+              setActionMeetings((prev) => prev.filter((x) => x.id !== m.id));
+              toast(`Approved meeting`, "success");
+            }}
+            onRejectOrder={(o) => setActionOrders((prev) => prev.filter((x) => x.id !== o.id))}
+            onRejectMeeting={(m) => setActionMeetings((prev) => prev.filter((x) => x.id !== m.id))}
           />
         ) : (
           <AiChatTab
@@ -935,29 +983,75 @@ function AiChatTab({
 function ActionsTab({
   loading,
   onGenerate,
+  orders,
+  meetings,
+  onApproveOrder,
+  onRejectOrder,
+  onApproveMeeting,
+  onRejectMeeting,
 }: {
   loading: boolean;
   onGenerate: () => void;
+  orders: Order[];
+  meetings: Meeting[];
+  onApproveOrder: (o: Order) => void;
+  onRejectOrder: (o: Order) => void;
+  onApproveMeeting: (m: Meeting) => void;
+  onRejectMeeting: (m: Meeting) => void;
 }) {
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-      <Sparkles className="h-8 w-8 text-primary mb-3" />
-      <h4 className="font-semibold text-foreground">Export Actions</h4>
-      <p className="text-xs text-muted-foreground mt-1 mb-4">
-        Extract orders and meetings from this conversation and save them to a text file.
-      </p>
-      {loading ? (
-        <div className="flex items-center text-sm text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin mr-2 text-primary" /> Generating actions...
-        </div>
-      ) : (
+    <div className="flex-1 overflow-y-auto p-4 bg-background">
+      <div className="flex items-center justify-between mb-4">
+        <h4 className="font-semibold text-foreground flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-primary" /> Proposed Actions
+        </h4>
         <button
           onClick={onGenerate}
-          className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-semibold"
+          disabled={loading}
+          className="h-8 px-3 rounded-md bg-secondary text-secondary-foreground text-xs font-semibold hover:bg-secondary/80 disabled:opacity-50 flex items-center gap-2"
         >
-          Generate Actions
+          {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+          Regenerate
         </button>
+      </div>
+
+      {orders.length === 0 && meetings.length === 0 && !loading && (
+        <div className="text-sm text-muted-foreground text-center py-10">
+          No actions found. Generate some from the chat!
+        </div>
       )}
+
+      <div className="space-y-4">
+        {orders.map((o) => (
+          <div key={o.id} className="bg-card border border-border rounded-xl p-3 shadow-sm">
+            <div className="flex justify-between items-start mb-2">
+              <Badge variant="primary">Order</Badge>
+              <span className="text-xs text-muted-foreground font-mono">{o.id}</span>
+            </div>
+            <div className="text-sm font-semibold mb-1">{o.items}</div>
+            <div className="text-xs text-muted-foreground mb-3">Total: RM {o.total}</div>
+            <div className="flex gap-2">
+              <button onClick={() => onRejectOrder(o)} className="flex-1 h-8 rounded-md border border-border text-xs font-semibold hover:bg-accent text-destructive">Reject</button>
+              <button onClick={() => onApproveOrder(o)} className="flex-1 h-8 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90">Approve</button>
+            </div>
+          </div>
+        ))}
+
+        {meetings.map((m) => (
+          <div key={m.id} className="bg-card border border-border rounded-xl p-3 shadow-sm">
+            <div className="flex justify-between items-start mb-2">
+              <Badge variant="warning">Meeting</Badge>
+              <span className="text-xs text-muted-foreground font-mono">{m.id}</span>
+            </div>
+            <div className="text-sm font-semibold mb-1">{m.purpose}</div>
+            <div className="text-xs text-muted-foreground mb-3">{m.date} at {m.time} ({m.duration})</div>
+            <div className="flex gap-2">
+              <button onClick={() => onRejectMeeting(m)} className="flex-1 h-8 rounded-md border border-border text-xs font-semibold hover:bg-accent text-destructive">Reject</button>
+              <button onClick={() => onApproveMeeting(m)} className="flex-1 h-8 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90">Approve</button>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
