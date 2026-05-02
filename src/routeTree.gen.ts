@@ -13,6 +13,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as OrdersRouteImport } from './routes/orders'
 import { Route as MessagesRouteImport } from './routes/messages'
 import { Route as MeetingsRouteImport } from './routes/meetings'
+import { Route as IntegrationsRouteImport } from './routes/integrations'
 import { Route as CustomersRouteImport } from './routes/customers'
 import { Route as CatalogRouteImport } from './routes/catalog'
 import { Route as AnalyticsRouteImport } from './routes/analytics'
@@ -36,6 +37,11 @@ const MessagesRoute = MessagesRouteImport.update({
 const MeetingsRoute = MeetingsRouteImport.update({
   id: '/meetings',
   path: '/meetings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IntegrationsRoute = IntegrationsRouteImport.update({
+  id: '/integrations',
+  path: '/integrations',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CustomersRoute = CustomersRouteImport.update({
@@ -64,6 +70,7 @@ export interface FileRoutesByFullPath {
   '/analytics': typeof AnalyticsRoute
   '/catalog': typeof CatalogRoute
   '/customers': typeof CustomersRoute
+  '/integrations': typeof IntegrationsRoute
   '/meetings': typeof MeetingsRoute
   '/messages': typeof MessagesRoute
   '/orders': typeof OrdersRoute
@@ -74,6 +81,7 @@ export interface FileRoutesByTo {
   '/analytics': typeof AnalyticsRoute
   '/catalog': typeof CatalogRoute
   '/customers': typeof CustomersRoute
+  '/integrations': typeof IntegrationsRoute
   '/meetings': typeof MeetingsRoute
   '/messages': typeof MessagesRoute
   '/orders': typeof OrdersRoute
@@ -85,6 +93,7 @@ export interface FileRoutesById {
   '/analytics': typeof AnalyticsRoute
   '/catalog': typeof CatalogRoute
   '/customers': typeof CustomersRoute
+  '/integrations': typeof IntegrationsRoute
   '/meetings': typeof MeetingsRoute
   '/messages': typeof MessagesRoute
   '/orders': typeof OrdersRoute
@@ -97,6 +106,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/catalog'
     | '/customers'
+    | '/integrations'
     | '/meetings'
     | '/messages'
     | '/orders'
@@ -107,6 +117,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/catalog'
     | '/customers'
+    | '/integrations'
     | '/meetings'
     | '/messages'
     | '/orders'
@@ -117,6 +128,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/catalog'
     | '/customers'
+    | '/integrations'
     | '/meetings'
     | '/messages'
     | '/orders'
@@ -128,6 +140,7 @@ export interface RootRouteChildren {
   AnalyticsRoute: typeof AnalyticsRoute
   CatalogRoute: typeof CatalogRoute
   CustomersRoute: typeof CustomersRoute
+  IntegrationsRoute: typeof IntegrationsRoute
   MeetingsRoute: typeof MeetingsRoute
   MessagesRoute: typeof MessagesRoute
   OrdersRoute: typeof OrdersRoute
@@ -162,6 +175,13 @@ declare module '@tanstack/react-router' {
       path: '/meetings'
       fullPath: '/meetings'
       preLoaderRoute: typeof MeetingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/integrations': {
+      id: '/integrations'
+      path: '/integrations'
+      fullPath: '/integrations'
+      preLoaderRoute: typeof IntegrationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/customers': {
@@ -200,6 +220,7 @@ const rootRouteChildren: RootRouteChildren = {
   AnalyticsRoute: AnalyticsRoute,
   CatalogRoute: CatalogRoute,
   CustomersRoute: CustomersRoute,
+  IntegrationsRoute: IntegrationsRoute,
   MeetingsRoute: MeetingsRoute,
   MessagesRoute: MessagesRoute,
   OrdersRoute: OrdersRoute,

@@ -524,6 +524,16 @@ export function MessagesPage() {
               </div>
             );
           })}
+          {activeChatId && useApp().isTyping[activeChatId] && (
+            <div className="flex justify-start animate-fade-in">
+              <div className="bg-card border border-border rounded-2xl rounded-bl-md px-4 py-3 shadow-sm flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                <span className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                <span className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce"></span>
+                <span className="text-[10px] font-semibold text-muted-foreground ml-1 uppercase tracking-wider">Typing</span>
+              </div>
+            </div>
+          )}
           {showAnalysisBanner && (
             <div className="flex justify-center">
               <div className="text-[11px] text-muted-foreground bg-primary-soft px-3 py-1 rounded-full inline-flex items-center gap-2">
