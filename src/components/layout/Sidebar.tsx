@@ -11,6 +11,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Building2,
+  Bot,
+  Upload,
+  Swords,
+  TrendingUp,
   type LucideIcon,
 } from "lucide-react";
 import { useApp, BUSINESS_LIST } from "@/lib/appContext";
@@ -26,6 +30,10 @@ type NavItem = {
 
 const NAV: NavItem[] = [
   { to: "/", label: "Dashboard", icon: Home, exact: true },
+  { to: "/copilot", label: "AI Copilot", icon: Bot },
+  { to: "/forecast", label: "Forecast", icon: TrendingUp },
+  { to: "/intelligence", label: "Intel", icon: Swords },
+  { to: "/import", label: "AI Import", icon: Upload },
   { to: "/messages", label: "Messages", icon: MessageCircle, badge: "messages" },
   { to: "/orders", label: "Orders", icon: Package, badge: "orders" },
   { to: "/meetings", label: "Meetings", icon: Calendar },

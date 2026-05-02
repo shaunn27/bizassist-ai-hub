@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd";
-import { Download, FileText, X, Database, FileCheck2, Link2 } from "lucide-react";
+import { Download, FileText, X, Database, FileCheck2, Link2, Trash2, Plus, FileDown } from "lucide-react";
 import { useApp } from "@/lib/appContext";
 import { Badge } from "@/components/shared/Badge";
 import { toast } from "@/components/shared/Toast";
+import { cancelLocalOrder } from "@/server/cancelItem.functions";
+import { useAI } from "@/hooks/useAI";
+import { generateInvoicePDF } from "@/utils/pdfExport";
 import type { Order } from "@/data/mockOrders";
 import { cn } from "@/lib/utils";
 
@@ -15,8 +18,12 @@ const COLS: { key: Order["status"]; color: string; label: string }[] = [
 ];
 
 export function OrdersPage() {
-  const { orders, updateOrderStatus } = useApp();
+  const { orders, updateOrderStatus, deleteOrder, createOrder, business, customers } = useApp();
+  const { getInvoice } = useAI();
   const [active, setActive] = useState<Order | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [invoiceError, setInvoiceError] = useState<string | null>(null);
   const totalToday = orders.reduce((s, o) => s + (o.status !== "Delivered" ? o.total : 0), 0);
 
   const onDragEnd = (r: DropResult) => {
@@ -70,10 +77,10 @@ export function OrdersPage() {
             <Download className="h-3.5 w-3.5" /> CSV
           </button>
           <button
-            onClick={() => toast("PDF report generated", "success")}
+            onClick={() => setShowCreate(true)}
             className="h-9 px-3 rounded-md bg-primary text-primary-foreground text-sm flex items-center gap-1.5"
           >
-            <FileText className="h-3.5 w-3.5" /> PDF Report
+            <Plus className="h-3.5 w-3.5" /> Create Order
           </button>
         </div>
       </div>
@@ -231,21 +238,132 @@ export function OrdersPage() {
                 </button>
               </div>
               <button
+                onClick={async () => {
+                  if (!confirm(`Cancel order ${active.id} for ${active.customerName}? This cannot be undone.`)) return;
+                  const res = await cancelLocalOrder({ data: { customerName: active.customerName, orderId: active.id } });
+                  if (res.ok) {
+                    deleteOrder(active.id);
+                    setActive(null);
+                    toast(`Order ${active.id} cancelled and removed.`, "success");
+                  } else {
+                    toast(res.error || "Failed to cancel order.", "error");
+                  }
+                }}
+                className="w-full h-9 rounded-md border border-destructive/50 text-destructive text-sm font-medium flex items-center justify-center gap-1.5 hover:bg-destructive/5"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Cancel Order
+              </button>
+              <button
                 onClick={() => toast("Connected to business database — stock updated", "success")}
                 className="w-full h-9 rounded-md border border-border text-sm flex items-center justify-center gap-1.5"
               >
                 <Database className="h-3.5 w-3.5" /> Link to Inventory
               </button>
               <button
-                onClick={() => toast("Quotation synced to main order system", "success")}
-                className="w-full h-9 rounded-md border border-border text-sm flex items-center justify-center gap-1.5"
+                onClick={async () => {
+                  if (!active) return;
+                  setInvoiceLoading(true);
+                  setInvoiceError(null);
+                  try {
+                    const cust = customers.find(c => c.id === active.customerId);
+                    const result = await getInvoice({
+                      orderId: active.id,
+                      customerName: active.customerName,
+                      customerPhone: cust?.phone,
+                      items: active.items,
+                      total: active.total,
+                      businessName: business,
+                      date: active.receivedAt,
+                      status: active.status,
+                      source: active.source,
+                      chatExcerpt: active.chatExcerpt,
+                    });
+                    if (result) {
+                      const doc = await generateInvoicePDF(result);
+                      doc.save(`Invoice-${result.invoiceNumber || active.id}.pdf`);
+                      toast(`Invoice generated: ${result.invoiceNumber}`, "success");
+                    } else {
+                      setInvoiceError("Failed to generate invoice. Check your API key in Settings.");
+                      toast("Failed to generate invoice", "error");
+                    }
+                  } catch (err: any) {
+                    setInvoiceError(err?.message || String(err));
+                    toast(err?.message || "Failed to generate invoice", "error");
+                  }
+                  setInvoiceLoading(false);
+                }}
+                disabled={invoiceLoading}
+                className="w-full h-9 rounded-md bg-primary text-primary-foreground text-sm font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50"
               >
-                <FileCheck2 className="h-3.5 w-3.5" /> Generate Quotation
+                <FileDown className="h-3.5 w-3.5" />
+                {invoiceLoading ? "Generating..." : "Generate Invoice (PDF)"}
               </button>
+              {invoiceError && (
+                <p className="text-xs text-destructive font-medium px-1">{invoiceError}</p>
+              )}
             </div>
           </div>
         </div>
       )}
+
+      {showCreate && (
+        <CreateOrderModal
+          onClose={() => setShowCreate(false)}
+          onCreate={(input) => {
+            createOrder(input);
+            setShowCreate(false);
+            toast("Order created successfully", "success");
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function CreateOrderModal({ onClose, onCreate }: {
+  onClose: () => void;
+  onCreate: (input: { customerId: string; customerName: string; items: string; total: number }) => void;
+}) {
+  const [customerId, setCustomerId] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [items, setItems] = useState("");
+  const [total, setTotal] = useState("");
+
+  return (
+    <div className="fixed inset-0 z-[80] bg-foreground/40 flex items-center justify-center animate-fade-in" onClick={onClose}>
+      <div className="w-[420px] bg-card border border-border rounded-xl shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="p-4 border-b border-border flex items-center justify-between">
+          <span className="font-bold text-foreground">Create Order</span>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="p-4 space-y-3">
+          <div>
+            <label className="text-xs text-muted-foreground">Customer Name</label>
+            <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="w-full h-9 px-3 rounded-md border border-border bg-background text-sm mt-1" placeholder="e.g. Ah Kow" />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Customer ID</label>
+            <input value={customerId} onChange={(e) => setCustomerId(e.target.value)} className="w-full h-9 px-3 rounded-md border border-border bg-background text-sm mt-1" placeholder="e.g. c1" />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Items</label>
+            <input value={items} onChange={(e) => setItems(e.target.value)} className="w-full h-9 px-3 rounded-md border border-border bg-background text-sm mt-1" placeholder="e.g. 2x Premium Chocolate Box" />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Total (RM)</label>
+            <input type="number" value={total} onChange={(e) => setTotal(e.target.value)} className="w-full h-9 px-3 rounded-md border border-border bg-background text-sm mt-1" placeholder="e.g. 150" />
+          </div>
+          <button
+            onClick={() => {
+              if (!customerName || !items || !total) { toast("Please fill all fields", "error"); return; }
+              onCreate({ customerId: customerId || `cust-${Date.now().toString().slice(-4)}`, customerName, items, total: Number(total) });
+            }}
+            className="w-full h-10 rounded-md bg-primary text-primary-foreground text-sm font-semibold"
+          >
+            Create Order
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,4 +1,8 @@
 import type { ChatThread } from "@/data/mockChats";
+import type { Order } from "@/data/mockOrders";
+import type { Meeting } from "@/data/mockMeetings";
+import type { Customer } from "@/data/mockCustomers";
+import type { Product } from "@/data/mockProducts";
 import type { AIAnalysis } from "@/utils/parseAIResponse";
 import type { ChatActionPlan } from "@/utils/chatActions";
 
@@ -72,6 +76,36 @@ export async function persistConfirmedMeeting(input: {
   return postJson("/api/meetings/confirm", input);
 }
 
+export async function updateOrderStatus(input: {
+  orderId: string;
+  status: Order["status"];
+}): Promise<{ configured: boolean; ok: boolean; orderNo?: string; status?: string }> {
+  return postJson("/api/orders/status", input);
+}
+
+export async function updateMeetingStatus(input: {
+  meetingId: string;
+  status: Meeting["status"];
+}): Promise<{ configured: boolean; ok: boolean; meetingId?: string; status?: string }> {
+  return postJson("/api/meetings/status", input);
+}
+
+export async function listOrders(): Promise<{ configured: boolean; orders: Order[] }> {
+  return getJson("/api/orders/list");
+}
+
+export async function listMeetings(): Promise<{ configured: boolean; meetings: Meeting[] }> {
+  return getJson("/api/meetings/list");
+}
+
+export async function listCustomers(): Promise<{ configured: boolean; customers: Customer[] }> {
+  return getJson("/api/customers/list");
+}
+
+export async function listProducts(): Promise<{ configured: boolean; products: Product[] }> {
+  return getJson("/api/products/list");
+}
+
 export async function testIlmuConnection(input: {
   apiKey?: string;
   model?: string;
@@ -104,4 +138,22 @@ export async function generateChatActionPlan(input: {
   contextBlock?: string;
 }): Promise<ChatActionPlan> {
   return postJson("/api/ai/actions", input);
+}
+
+export async function simulateCustomerReply(input: {
+  customerId: string;
+  customerName?: string;
+  messages: Array<{
+    id: string;
+    from: "customer" | "agent";
+    type: "text" | "image" | "voice";
+    text?: string;
+    filename?: string;
+    duration?: string;
+    time: string;
+    timestamp: number;
+  }>;
+  productCatalog?: string;
+}): Promise<{ reply: string; skipped: boolean }> {
+  return postJson("/api/ai/simulate-customer", input);
 }

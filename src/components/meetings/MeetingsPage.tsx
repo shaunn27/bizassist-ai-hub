@@ -3,13 +3,15 @@ import { useApp } from "@/lib/appContext";
 import { mockCustomers } from "@/data/mockCustomers";
 import { Badge } from "@/components/shared/Badge";
 import { toast } from "@/components/shared/Toast";
-import { ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
+import { cancelLocalMeeting } from "@/server/cancelItem.functions";
+import { ChevronLeft, ChevronRight, AlertTriangle, Trash2, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function MeetingsPage() {
-  const { meetings, orders } = useApp();
+  const { meetings, orders, createMeeting, deleteMeeting } = useApp();
   const [cursor, setCursor] = useState(new Date());
   const [selected, setSelected] = useState(new Date().toISOString().split("T")[0]);
+  const [showCreate, setShowCreate] = useState(false);
 
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
@@ -141,16 +143,104 @@ export function MeetingsPage() {
                       <AlertTriangle className="h-3 w-3" /> Check Conflicts
                     </button>
                     <button
-                      onClick={() => toast("Meeting confirmed", "success")}
-                      className="h-8 px-3 rounded-md bg-primary text-primary-foreground text-xs font-semibold"
+                      onClick={async () => {
+                        if (!confirm(`Cancel meeting for ${m.customerName}? This cannot be undone.`)) return;
+                        const res = await cancelLocalMeeting({ data: { customerName: m.customerName, meetingId: m.id } });
+                        if (res.ok) {
+                          deleteMeeting(m.id);
+                          toast("Meeting cancelled.", "success");
+                        } else {
+                          toast(res.error || "Failed to cancel meeting.", "error");
+                        }
+                      }}
+                      className="h-8 px-3 rounded-md border border-destructive/50 text-destructive text-xs font-semibold flex items-center gap-1.5 hover:bg-destructive/5"
                     >
-                      Confirm
+                      <Trash2 className="h-3 w-3" /> Cancel
                     </button>
                   </div>
                 </div>
               );
             })}
           </div>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="w-full h-9 mt-3 rounded-md bg-primary text-primary-foreground text-sm font-semibold flex items-center justify-center gap-1.5"
+          >
+            <Plus className="h-3.5 w-3.5" /> Create Meeting
+          </button>
+        </div>
+      </div>
+
+      {showCreate && (
+        <CreateMeetingModal
+          defaultDate={selected}
+          onClose={() => setShowCreate(false)}
+          onCreate={(input) => {
+            createMeeting(input);
+            setShowCreate(false);
+            toast("Meeting created successfully", "success");
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function CreateMeetingModal({ defaultDate, onClose, onCreate }: {
+  defaultDate: string;
+  onClose: () => void;
+  onCreate: (input: { customerId: string; customerName: string; date: string; time: string; duration: string; purpose: string }) => void;
+}) {
+  const [customerName, setCustomerName] = useState("");
+  const [customerId, setCustomerId] = useState("");
+  const [date, setDate] = useState(defaultDate);
+  const [time, setTime] = useState("10:00 AM");
+  const [duration, setDuration] = useState("30 min");
+  const [purpose, setPurpose] = useState("");
+
+  return (
+    <div className="fixed inset-0 z-[80] bg-foreground/40 flex items-center justify-center animate-fade-in" onClick={onClose}>
+      <div className="w-[420px] bg-card border border-border rounded-xl shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="p-4 border-b border-border flex items-center justify-between">
+          <span className="font-bold text-foreground">Create Meeting</span>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="p-4 space-y-3">
+          <div>
+            <label className="text-xs text-muted-foreground">Customer Name</label>
+            <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="w-full h-9 px-3 rounded-md border border-border bg-background text-sm mt-1" placeholder="e.g. David Tan" />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Customer ID</label>
+            <input value={customerId} onChange={(e) => setCustomerId(e.target.value)} className="w-full h-9 px-3 rounded-md border border-border bg-background text-sm mt-1" placeholder="e.g. c5" />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Date</label>
+            <input value={date} onChange={(e) => setDate(e.target.value)} className="w-full h-9 px-3 rounded-md border border-border bg-background text-sm mt-1" placeholder="YYYY-MM-DD" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs text-muted-foreground">Time</label>
+              <input value={time} onChange={(e) => setTime(e.target.value)} className="w-full h-9 px-3 rounded-md border border-border bg-background text-sm mt-1" placeholder="e.g. 3:00 PM" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Duration</label>
+              <input value={duration} onChange={(e) => setDuration(e.target.value)} className="w-full h-9 px-3 rounded-md border border-border bg-background text-sm mt-1" placeholder="e.g. 30 min" />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Purpose</label>
+            <input value={purpose} onChange={(e) => setPurpose(e.target.value)} className="w-full h-9 px-3 rounded-md border border-border bg-background text-sm mt-1" placeholder="e.g. Discuss bulk pricing" />
+          </div>
+          <button
+            onClick={() => {
+              if (!customerName || !purpose) { toast("Please fill required fields", "error"); return; }
+              onCreate({ customerId: customerId || `cust-${Date.now().toString().slice(-4)}`, customerName, date, time, duration, purpose });
+            }}
+            className="w-full h-10 rounded-md bg-primary text-primary-foreground text-sm font-semibold"
+          >
+            Create Meeting
+          </button>
         </div>
       </div>
     </div>

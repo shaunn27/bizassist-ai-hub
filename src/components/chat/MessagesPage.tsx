@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Search,
   Image as ImageIcon,
@@ -13,6 +13,9 @@ import {
   ChevronRight,
   Loader2,
   Upload,
+  FileText,
+  Zap,
+  Package,
 } from "lucide-react";
 import { useApp } from "@/lib/appContext";
 import { useAI } from "@/hooks/useAI";
@@ -20,7 +23,6 @@ import { mockCustomers, type Customer } from "@/data/mockCustomers";
 import { mockProducts } from "@/data/mockProducts";
 import { mockMeetings } from "@/data/mockMeetings";
 import { formatChatForAI, buildContextBlock } from "@/utils/formatChat";
-import type { AIAnalysis } from "@/utils/parseAIResponse";
 import type { ChatActionPlan, ActionProposal } from "@/utils/chatActions";
 import { parseWhatsAppExport } from "@/utils/parseWhatsAppExport";
 import { SLATimer } from "@/components/shared/SLATimer";
@@ -31,6 +33,7 @@ import { playPing } from "@/hooks/useSound";
 import { persistConfirmedOrder, persistConfirmedMeeting } from "@/lib/apiClient";
 
 type AIChatMsg = { role: "user" | "assistant"; content: string };
+type AIActivity = { id: string; type: string; text: string; time: string };
 
 function makeFallbackCustomer(chat: {
   customerId: string;
@@ -70,13 +73,15 @@ export function MessagesPage() {
     importWhatsAppChat,
     createOrder,
     createMeeting,
+    products,
+    customers,
     settings,
     addNotification,
   } = useApp();
-  const { analyze, chatWithAI, proposeActions, loading: aiLoading, error: aiError } = useAI();
+  const { analyze, chatWithAI, proposeActions, getSmartReplies, getSentiment, summarizeConversation, detectOrder, scorePriority, autoPilotReply, loading: aiLoading, error: aiError } = useAI();
   const [search, setSearch] = useState("");
-  const [activeTab, setActiveTab] = useState<"analysis" | "chat" | "actions">("analysis");
-  const [analyses, setAnalyses] = useState<Record<string, AIAnalysis | null>>({});
+  const [activeTab, setActiveTab] = useState<"analysis" | "chat" | "actions" | "activity">("activity");
+  const [analyses, setAnalyses] = useState<Record<string, string | null>>({});
   const [actionPlans, setActionPlans] = useState<Record<string, ChatActionPlan | null>>({});
   const [analyzing, setAnalyzing] = useState(false);
   const [planning, setPlanning] = useState(false);
@@ -88,9 +93,19 @@ export function MessagesPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
   const [customerNameOverride, setCustomerNameOverride] = useState("");
+  const [whatsAppUserName, setWhatsAppUserName] = useState("");
   const [agentNamesInput, setAgentNamesInput] = useState("You, Me, Agent");
   const [importing, setImporting] = useState(false);
   const [showAnalysisBanner, setShowAnalysisBanner] = useState(false);
+  const [smartReplies, setSmartReplies] = useState<Record<string, string[]>>({});
+  const [sentiments, setSentiments] = useState<Record<string, { sentiment: string; emoji: string }>>({});
+  const [aiActivities, setAiActivities] = useState<Record<string, AIActivity[]>>({});
+  const [summaries, setSummaries] = useState<Record<string, any>>({});
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [orderDetections, setOrderDetections] = useState<Record<string, any>>({});
+  const [priorityScores, setPriorityScores] = useState<Record<string, { score: number; reason: string }>>({});
+  const [autoPilot, setAutoPilot] = useState<Record<string, boolean>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const analysisBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
@@ -117,6 +132,15 @@ export function MessagesPage() {
     // eslint-disable-next-line
   }, [activeChatId]);
 
+  const addAiActivity = useCallback((chatId: string, type: string, text: string) => {
+    const time = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
+    const entry = { id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, type, text, time };
+    setAiActivities((prev) => ({
+      ...prev,
+      [chatId]: [...(prev[chatId] || []), entry].slice(-30),
+    }));
+  }, []);
+
   const customersById = useMemo(() => {
     const map = new Map<string, Customer>(mockCustomers.map((c) => [c.id, c]));
     for (const c of chats) {
@@ -140,6 +164,96 @@ export function MessagesPage() {
   const activeAnalysis = activeChatId ? analyses[activeChatId] : null;
   const activeAiChat = activeChatId ? aiChats[activeChatId] || [] : [];
 
+  // Auto-trigger: smart replies + sentiment when chat changes or new message arrives
+  useEffect(() => {
+    if (!activeChat || !activeChatId) return;
+    const lastMsg = activeChat.messages[activeChat.messages.length - 1];
+    if (!lastMsg) return;
+
+    const formatted = formatChatForAI(activeChat.messages, activeCustomer);
+    const lastMsgs = activeChat.messages
+      .filter((m) => m.from === "customer" && m.text)
+      .slice(-5)
+      .map((m) => m.text)
+      .join("\n");
+
+    // Smart replies
+    if (settings.apiKey) {
+      void getSmartReplies(formatted).then((replies) => {
+        if (replies.length > 0) {
+          setSmartReplies((prev) => ({ ...prev, [activeChatId]: replies }));
+          addAiActivity(activeChatId, "reply", `Generated ${replies.length} smart reply suggestions`);
+        }
+      });
+
+      // Sentiment
+      if (lastMsgs) {
+        void getSentiment(lastMsgs).then((result) => {
+          if (result) {
+            setSentiments((prev) => ({ ...prev, [activeChatId]: result }));
+            addAiActivity(activeChatId, "sentiment", `Detected sentiment: ${result.sentiment} ${result.emoji}`);
+          }
+        });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeChatId, activeChat?.messages.length]);
+
+  // Order detection: check for order intent on new customer messages
+  useEffect(() => {
+    if (!activeChat || !activeChatId || !settings.apiKey) return;
+    const lastMsg = activeChat.messages[activeChat.messages.length - 1];
+    if (!lastMsg || lastMsg.from !== "customer") return;
+    const timer = setTimeout(() => {
+      const formatted = formatChatForAI(activeChat.messages, activeCustomer);
+      const catalog = products.map(p => `${p.name} (${p.sku}) RM${p.price}`).join("; ");
+      void detectOrder(formatted, catalog).then((result) => {
+        if (result?.orderDetected) {
+          setOrderDetections((prev) => ({ ...prev, [activeChatId]: result }));
+          addAiActivity(activeChatId, "order-detected", `AI detected order: ${result.items.map((i: any) => `${i.qty}x ${i.name}`).join(", ")} (RM${result.total})`);
+        }
+      });
+    }, 2000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeChatId, activeChat?.messages.length]);
+
+  // Auto-Pilot: auto-reply when enabled and customer sends a message
+  useEffect(() => {
+    if (!activeChatId || !autoPilot[activeChatId] || !activeChat || !settings.apiKey) return;
+    const lastMsg = activeChat.messages[activeChat.messages.length - 1];
+    if (!lastMsg || lastMsg.from !== "customer") return;
+    const formatted = formatChatForAI(activeChat.messages, activeCustomer);
+    const catalog = products.map(p => `${p.name} (${p.sku}) RM${p.price}`).join("; ");
+    void autoPilotReply(formatted, catalog).then((result) => {
+      if (!result?.reply || !activeChatId) return;
+      sendAgentMessage(activeChatId, result.reply);
+      addAiActivity(activeChatId, "autopilot", `Auto-Pilot sent reply: "${result.reply.slice(0, 50)}..."`);
+      if (result.autoAction?.hasOrder && activeCustomer) {
+        createOrder({ customerId: activeCustomer.id, customerName: activeCustomer.name, items: result.autoAction.items.join(", "), total: result.autoAction.total ?? 0 });
+        addAiActivity(activeChatId, "autopilot", `Auto-Pilot created order: ${result.autoAction.items.join(", ")}`);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeChatId, activeChat?.messages.length, autoPilot[activeChatId || ""]]);
+
+  // Priority scoring on mount
+  useEffect(() => {
+    if (!settings.apiKey || chats.length === 0) return;
+    const convos = chats.map(c => ({
+      customerId: c.customerId, customerName: customersById.get(c.customerId)?.name,
+      lastMessagePreview: c.lastMessagePreview, waitingMinutes: c.waitingMinutes,
+      unread: c.unread, flagged: c.flagged, sentiment: sentiments[c.customerId]?.sentiment,
+    }));
+    void scorePriority(convos).then((scores) => {
+      if (!scores) return;
+      const map: Record<string, any> = {};
+      scores.forEach((s) => { map[s.customerId] = s; });
+      setPriorityScores(map);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chats.length, settings.apiKey]);
+
   const handleImportChat = async () => {
     if (!importText.trim()) {
       toast("Paste WhatsApp exported text or upload a .txt file first.", "error");
@@ -150,16 +264,22 @@ export function MessagesPage() {
     try {
       const parsed = parseWhatsAppExport(importText, {
         customerNameOverride: customerNameOverride.trim() || undefined,
-        agentNames: agentNamesInput
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
+        agentNames: [
+          ...new Set(
+            agentNamesInput
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean)
+              .concat(whatsAppUserName.trim() ? [whatsAppUserName.trim()] : []),
+          ),
+        ],
       });
 
       const result = await importWhatsAppChat(parsed);
       setImportOpen(false);
       setImportText("");
       setCustomerNameOverride("");
+      setWhatsAppUserName("");
       toast(`Imported chat for ${parsed.customerName}`, "success");
       setActiveChatId(result.customerId);
     } catch (err: unknown) {
@@ -215,6 +335,7 @@ export function MessagesPage() {
     if (result) {
       setActionPlans((prev) => ({ ...prev, [activeChatId]: result }));
       toast("AI action plan ready", "success");
+      if (activeChatId) addAiActivity(activeChatId, "action", `Generated action plan with ${result.proposals.length} proposals`);
     } else if (aiError) {
       toast(aiError, "error");
     }
@@ -313,6 +434,7 @@ export function MessagesPage() {
     if (result) {
       setAnalyses((prev) => ({ ...prev, [activeChatId]: result }));
       toast("AI analysis complete", "success");
+      if (result && activeChatId) addAiActivity(activeChatId, "analysis", "Completed conversation analysis");
     } else if (aiError) {
       toast(aiError, "error");
     }
@@ -403,14 +525,34 @@ export function MessagesPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-semibold text-sm text-foreground truncate">
-                      {cust.name}
-                    </span>
-                    {c.unread > 0 && (
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="font-semibold text-sm text-foreground truncate">
+                        {cust.name}
+                      </span>
+                      {sentiments[c.customerId] && (
+                        <span className="text-xs shrink-0" title={`Sentiment: ${sentiments[c.customerId].sentiment}`}>
+                          {sentiments[c.customerId].emoji}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {priorityScores[c.customerId] && (
+                        <span className={cn(
+                          "text-[9px] font-bold px-1.5 py-0.5 rounded-full",
+                          priorityScores[c.customerId].score >= 80 ? "bg-red-100 text-red-700" :
+                          priorityScores[c.customerId].score >= 60 ? "bg-orange-100 text-orange-700" :
+                          priorityScores[c.customerId].score >= 40 ? "bg-yellow-100 text-yellow-700" :
+                          "bg-green-100 text-green-700",
+                        )}>
+                          {priorityScores[c.customerId].score}
+                        </span>
+                      )}
+                      {c.unread > 0 && (
                       <span className="h-4 min-w-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
                         {c.unread}
                       </span>
                     )}
+                    </div>
                   </div>
                   <p className="text-xs text-muted-foreground truncate mt-0.5">
                     {c.lastMessagePreview}
@@ -440,9 +582,54 @@ export function MessagesPage() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="font-semibold text-sm text-foreground">{activeCustomer.name}</div>
-            <div className="text-xs text-muted-foreground">{activeCustomer.phone}</div>
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              {activeCustomer.phone}
+              {sentiments[activeChatId!] && (
+                <span
+                  className={cn(
+                    "px-1.5 py-0.5 rounded-full text-[10px] font-semibold",
+                    sentiments[activeChatId!].sentiment === "positive" && "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+                    sentiments[activeChatId!].sentiment === "neutral" && "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+                    sentiments[activeChatId!].sentiment === "negative" && "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+                    sentiments[activeChatId!].sentiment === "angry" && "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+                  )}
+                >
+                  {sentiments[activeChatId!].emoji} {sentiments[activeChatId!].sentiment}
+                </span>
+              )}
+            </div>
           </div>
           <SLATimer baseMinutes={activeChat.waitingMinutes} />
+          <button
+            onClick={async () => {
+              if (!activeChat || !activeChatId) return;
+              setSummaryLoading(true);
+              setSummaryOpen(true);
+              const formatted = formatChatForAI(activeChat.messages, activeCustomer);
+              const profile = activeCustomer ? `Name: ${activeCustomer.name}, Phone: ${activeCustomer.phone}, Orders: ${activeCustomer.totalOrders}, Lifetime: RM${activeCustomer.totalSpent}` : "";
+              const result = await summarizeConversation(formatted, profile);
+              setSummaryLoading(false);
+              if (result) {
+                setSummaries((prev) => ({ ...prev, [activeChatId]: result }));
+                addAiActivity(activeChatId, "summary", "Generated conversation summary & handoff note");
+              }
+            }}
+            className="h-8 px-3 rounded-md border border-border text-xs font-medium hover:bg-accent flex items-center gap-1.5"
+          >
+            <FileText className="h-3.5 w-3.5" /> Summary
+          </button>
+          <button
+            onClick={() => setAutoPilot((prev) => ({ ...prev, [activeChatId!]: !prev[activeChatId!] }))}
+            className={cn(
+              "h-8 px-3 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all",
+              autoPilot[activeChatId!]
+                ? "bg-green-100 text-green-700 border border-green-300 shadow-[0_0_10px_rgba(34,197,94,0.3)]"
+                : "border border-border hover:bg-accent",
+            )}
+          >
+            <Zap className="h-3.5 w-3.5" />
+            {autoPilot[activeChatId!] ? "Auto-Pilot ON" : "Auto-Pilot"}
+          </button>
           <button
             onClick={() => setProfileOpen(true)}
             className="h-8 px-3 rounded-md border border-border text-xs font-medium hover:bg-accent flex items-center gap-1.5"
@@ -511,6 +698,16 @@ export function MessagesPage() {
               </div>
             );
           })}
+          {activeChatId && useApp().isTyping[activeChatId] && (
+            <div className="flex justify-start animate-fade-in">
+              <div className="bg-card border border-border rounded-2xl rounded-bl-md px-4 py-3 shadow-sm flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                <span className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                <span className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce"></span>
+                <span className="text-[10px] font-semibold text-muted-foreground ml-1 uppercase tracking-wider">Typing</span>
+              </div>
+            </div>
+          )}
           {showAnalysisBanner && (
             <div className="flex justify-center">
               <div className="text-[11px] text-muted-foreground bg-primary-soft px-3 py-1 rounded-full inline-flex items-center gap-2">
@@ -524,10 +721,87 @@ export function MessagesPage() {
               </div>
             </div>
           )}
+
+          {/* Auto-Pilot Banner */}
+          {autoPilot[activeChatId!] && (
+            <div className="flex justify-center">
+              <div className="text-[11px] text-green-700 bg-green-50 border border-green-200 px-3 py-1.5 rounded-full inline-flex items-center gap-2 animate-pulse">
+                <Zap className="h-3 w-3" />
+                AI Auto-Pilot is handling this conversation
+              </div>
+            </div>
+          )}
+
+          {/* Order Detection Card */}
+          {activeChatId && orderDetections[activeChatId]?.orderDetected && (
+            <div className="flex justify-center animate-fade-in">
+              <div className="max-w-[80%] bg-gradient-to-r from-emerald-50 to-green-50 border-2 border-emerald-300 rounded-xl p-4 shadow-lg">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="h-7 w-7 rounded-full bg-emerald-500 text-white flex items-center justify-center">
+                    <Package className="h-4 w-4" />
+                  </div>
+                  <span className="text-sm font-bold text-emerald-800">Order Detected by AI</span>
+                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">{orderDetections[activeChatId].confidence}%</span>
+                </div>
+                <div className="space-y-1 mb-3">
+                  {orderDetections[activeChatId].items?.map((item: any, i: number) => (
+                    <div key={i} className="flex justify-between text-xs">
+                      <span className="text-emerald-900">{item.qty}x {item.name} <span className="text-emerald-600">({item.sku})</span></span>
+                      <span className="font-semibold text-emerald-900">RM{item.lineTotal}</span>
+                    </div>
+                  ))}
+                  <div className="border-t border-emerald-200 pt-1 flex justify-between text-sm font-bold">
+                    <span>Total</span><span>RM{orderDetections[activeChatId].total}</span>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      const det = orderDetections[activeChatId];
+                      createOrder({
+                        customerId: activeCustomer!.id,
+                        customerName: det.customerName || activeCustomer!.name,
+                        items: det.items.map((i: any) => `${i.qty}x ${i.name}`).join(", "),
+                        total: det.total,
+                      });
+                      toast("Order confirmed!", "success");
+                      addAiActivity(activeChatId, "order-confirmed", `One-click order confirmed: RM${det.total}`);
+                      setOrderDetections((prev) => ({ ...prev, [activeChatId!]: null }));
+                    }}
+                    className="flex-1 h-9 rounded-lg bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 flex items-center justify-center gap-2"
+                  >
+                    Confirm Order
+                  </button>
+                  <button
+                    onClick={() => setOrderDetections((prev) => ({ ...prev, [activeChatId!]: null }))}
+                    className="h-9 px-4 rounded-lg border border-emerald-300 text-emerald-700 text-sm font-semibold hover:bg-emerald-100"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           <div ref={messagesEndRef} />
         </div>
 
         <div className="border-t border-border bg-card p-3 shrink-0">
+          {/* Smart Reply Suggestions */}
+          {activeChatId && smartReplies[activeChatId]?.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2 animate-fade-in">
+              <Sparkles className="h-3.5 w-3.5 text-primary shrink-0 mt-1" />
+              {smartReplies[activeChatId].map((reply, i) => (
+                <button
+                  key={i}
+                  onClick={() => setChatInput(reply)}
+                  className="px-2.5 py-1.5 rounded-full text-xs font-medium bg-primary-soft text-primary-dark dark:text-accent-foreground hover:bg-primary/15 transition-colors text-left max-w-[220px] truncate border border-primary/20"
+                  title={reply}
+                >
+                  {reply}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="flex items-end gap-2">
             <button
               onClick={() => toast("File attached (UI demo)", "info")}
@@ -578,7 +852,7 @@ export function MessagesPage() {
       {/* AI Panel */}
       <div className="w-95 border-l border-border bg-card flex flex-col shrink-0">
         <div className="border-b border-border flex items-center px-3 shrink-0">
-          {(["analysis", "actions", "chat"] as const).map((tab) => (
+          {(["activity", "analysis", "actions", "chat"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -589,7 +863,7 @@ export function MessagesPage() {
                   : "border-transparent text-muted-foreground hover:text-foreground",
               )}
             >
-              {tab === "analysis" ? "AI Analysis" : tab === "actions" ? "AI Actions" : "Chat with AI"}
+              {tab === "activity" ? "Activity" : tab === "analysis" ? "AI Analysis" : tab === "actions" ? "AI Actions" : "Chat with AI"}
             </button>
           ))}
           {(analyzing || planning || aiLoading) && (
@@ -597,11 +871,12 @@ export function MessagesPage() {
           )}
         </div>
 
-        {activeTab === "analysis" ? (
+        {activeTab === "activity" ? (
+          <ActivityTab activities={activeChatId ? aiActivities[activeChatId] || [] : []} />
+        ) : activeTab === "analysis" ? (
           <AnalysisTab
             analysis={activeAnalysis}
             onRun={runAnalysis}
-            onUseReply={(r) => setChatInput(r)}
             loading={analyzing}
           />
         ) : activeTab === "actions" ? (
@@ -622,6 +897,8 @@ export function MessagesPage() {
           />
         )}
       </div>
+
+      <SummaryModal open={summaryOpen} onClose={() => setSummaryOpen(false)} loading={summaryLoading} data={summaries[activeChatId!]} />
 
       <Modal
         open={escalateOpen}
@@ -763,6 +1040,18 @@ export function MessagesPage() {
 
           <div>
             <label className="text-xs font-medium text-foreground">
+              Your WhatsApp name (optional)
+            </label>
+            <input
+              value={whatsAppUserName}
+              onChange={(e) => setWhatsAppUserName(e.target.value)}
+              className="mt-1 w-full h-9 px-3 rounded-md border border-border bg-background text-sm"
+              placeholder="The name that appears on your messages"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-foreground">
               Agent names (comma separated)
             </label>
             <input
@@ -794,22 +1083,19 @@ export function MessagesPage() {
 function AnalysisTab({
   analysis,
   onRun,
-  onUseReply,
   loading,
 }: {
-  analysis: AIAnalysis | null;
+  analysis: string | null;
   onRun: () => void;
-  onUseReply: (r: string) => void;
   loading: boolean;
 }) {
-  const [checked, setChecked] = useState<Record<number, boolean>>({});
   if (!analysis && !loading) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
         <Sparkles className="h-8 w-8 text-primary mb-3" />
         <h4 className="font-semibold text-foreground">No analysis yet</h4>
         <p className="text-xs text-muted-foreground mt-1 mb-4">
-          Run AI to analyze this conversation, extract orders, flag issues and suggest a reply.
+          Run AI to extract the business-relevant items from this conversation.
         </p>
         <button
           onClick={onRun}
@@ -829,115 +1115,13 @@ function AnalysisTab({
   }
   if (!analysis) return null;
 
-  const sevColor = (s: string): "danger" | "warning" | "primary" =>
-    s === "critical" ? "danger" : s === "warning" ? "warning" : "primary";
-
   return (
     <div className="flex-1 overflow-y-auto p-3 space-y-3">
-      <div className="bg-primary-soft border border-primary/30 rounded-lg p-3">
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] uppercase tracking-wider text-primary-dark dark:text-accent-foreground font-bold">
-            {analysis.requestType} confidence
-          </span>
-          <span className="font-bold text-primary text-lg">{analysis.confidenceScore}%</span>
-        </div>
-        <div className="mt-1.5 text-[11px] text-muted-foreground">
-          Detected:{" "}
-          <span className="font-semibold text-foreground">{analysis.detectedLanguage}</span>
-        </div>
-      </div>
-
-      <Section title="Order Summary">
-        <dl className="text-xs space-y-1">
-          <Row k="Items" v={analysis.orderSummary.items.join(", ") || "—"} />
-          <Row k="Quantity" v={analysis.orderSummary.quantity || "—"} />
-          <Row
-            k="Address"
-            v={analysis.orderSummary.deliveryAddress || "—"}
-            missing={!analysis.orderSummary.deliveryAddress}
-          />
-          <Row
-            k="Deadline"
-            v={analysis.orderSummary.deadline || "—"}
-            missing={!analysis.orderSummary.deadline}
-          />
-          <Row k="Notes" v={analysis.orderSummary.specialInstructions || "—"} />
-        </dl>
-        {analysis.orderSummary.missingFields.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {analysis.orderSummary.missingFields.map((f, i) => (
-              <Badge key={i} variant="warning">
-                ⚠ {f}
-              </Badge>
-            ))}
-          </div>
-        )}
-      </Section>
-
-      {analysis.confirmedDetails.length > 0 && (
-        <Section title="Confirmed Details">
-          <ul className="text-xs space-y-1">
-            {analysis.confirmedDetails.map((d, i) => (
-              <li key={i} className="flex gap-2">
-                <span className="text-success">✓</span>
-                <span className="text-foreground">{d}</span>
-              </li>
-            ))}
-          </ul>
-        </Section>
-      )}
-
-      {analysis.flags.length > 0 && (
-        <Section title="Flags & Risks">
-          <div className="space-y-2">
-            {analysis.flags.map((f, i) => (
-              <div
-                key={i}
-                className={cn(
-                  "rounded-md p-2.5 border",
-                  f.severity === "critical"
-                    ? "bg-destructive/5 border-destructive/30"
-                    : f.severity === "warning"
-                      ? "bg-warning/5 border-warning/30"
-                      : "bg-primary-soft border-primary/30",
-                )}
-              >
-                <div className="flex items-center gap-1.5">
-                  <Badge variant={sevColor(f.severity)}>{f.severity.toUpperCase()}</Badge>
-                  <span className="text-[11px] font-bold text-foreground">{f.type}</span>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">{f.description}</p>
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {analysis.unclearItems.length > 0 && (
-        <Section title="Needs Clarification">
-          <div className="space-y-2">
-            {analysis.unclearItems.map((u, i) => (
-              <div key={i} className="text-xs border border-border rounded-md p-2.5">
-                <div className="font-semibold text-foreground">{u.issue}</div>
-                <div className="text-muted-foreground mt-1">{u.whyItMatters}</div>
-                <div className="mt-1.5 text-primary font-medium">Ask: "{u.whatToAsk}"</div>
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      <Section title="Suggested Reply">
+      <Section title="Analysis Results">
         <div className="text-xs bg-secondary p-3 rounded-md text-foreground whitespace-pre-wrap">
-          {analysis.suggestedReply}
+          {analysis}
         </div>
-        <div className="mt-2 flex gap-2">
-          <button
-            onClick={() => onUseReply(analysis.suggestedReply)}
-            className="flex-1 h-8 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary-dark"
-          >
-            Use This Reply
-          </button>
+        <div className="mt-2">
           <button
             onClick={onRun}
             className="h-8 px-3 rounded-md border border-border text-xs font-semibold hover:bg-accent"
@@ -945,33 +1129,6 @@ function AnalysisTab({
             Regenerate
           </button>
         </div>
-      </Section>
-
-      <Section title="Agent Checklist">
-        <ul className="space-y-1.5">
-          {analysis.agentChecklist.map((step, i) => (
-            <li key={i} className="flex items-start gap-2 text-xs">
-              <input
-                type="checkbox"
-                checked={!!checked[i]}
-                onChange={(e) => setChecked((c) => ({ ...c, [i]: e.target.checked }))}
-                className="mt-0.5 h-3.5 w-3.5 accent-primary"
-              />
-              <span
-                className={cn(
-                  "text-foreground",
-                  checked[i] && "line-through text-muted-foreground",
-                )}
-              >
-                {step}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </Section>
-
-      <Section title="Customer Behavior">
-        <p className="text-xs text-muted-foreground">{analysis.customerBehaviorNote}</p>
       </Section>
     </div>
   );
@@ -984,17 +1141,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
         {title}
       </h5>
       {children}
-    </div>
-  );
-}
-
-function Row({ k, v, missing }: { k: string; v: string; missing?: boolean }) {
-  return (
-    <div className="flex gap-2">
-      <dt className="text-muted-foreground w-20 shrink-0">{k}</dt>
-      <dd className={cn("text-foreground font-medium flex-1", missing && "text-warning italic")}>
-        {v}
-      </dd>
     </div>
   );
 }
@@ -1230,6 +1376,139 @@ function ActionsTab({
           </div>
         ))
       )}
+    </div>
+  );
+}
+
+function SummaryModal({ open, onClose, loading, data }: { open: boolean; onClose: () => void; loading: boolean; data: any }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[90] bg-foreground/40 flex items-center justify-center animate-fade-in" onClick={onClose}>
+      <div className="w-[520px] max-h-[80vh] overflow-y-auto bg-card border border-border rounded-2xl shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="p-5 border-b border-border flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+              <FileText className="h-4 w-4 text-white" />
+            </div>
+            <h3 className="font-bold text-foreground">AI Summary & Handoff</h3>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="p-5 space-y-3">
+          {loading ? (
+            <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /><span className="ml-2 text-sm text-muted-foreground">Generating summary...</span></div>
+          ) : data ? (
+            <>
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="text-[10px] font-bold text-blue-600 uppercase mb-1">Customer Intent</div>
+                <div className="text-sm text-blue-900">{data.customerIntent}</div>
+              </div>
+              <div className={cn("p-3 rounded-lg border", data.sentimentTrend === "improving" ? "bg-green-50 border-green-200" : data.sentimentTrend === "declining" ? "bg-red-50 border-red-200" : "bg-yellow-50 border-yellow-200")}>
+                <div className="text-[10px] font-bold uppercase mb-1">Sentiment: {data.sentimentTrend}</div>
+                <div className="text-sm">{data.sentimentSummary}</div>
+              </div>
+              <div className={cn("p-3 rounded-lg border", data.riskLevel === "critical" || data.riskLevel === "high" ? "bg-red-50 border-red-200" : data.riskLevel === "medium" ? "bg-amber-50 border-amber-200" : "bg-green-50 border-green-200")}>
+                <div className="text-[10px] font-bold uppercase mb-1">Risk: {data.riskLevel}</div>
+                <div className="text-sm">{data.riskReason || "No significant risks"}</div>
+              </div>
+              {data.actionItems?.length > 0 && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <div className="text-[10px] font-bold text-amber-700 uppercase mb-2">Action Items</div>
+                  <ul className="space-y-1.5">{data.actionItems.map((item: any, i: number) => (
+                    <li key={i} className="flex items-center gap-2 text-xs">
+                      <span className={cn("px-1.5 py-0.5 rounded-full text-[9px] font-bold", item.status === "done" ? "bg-green-100 text-green-700" : item.status === "blocked" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700")}>{item.status}</span>
+                      <span className="text-amber-900">{item.task}</span>
+                      <span className="text-amber-500 text-[10px]">({item.assignee})</span>
+                    </li>
+                  ))}</ul>
+                </div>
+              )}
+              <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                <div className="text-[10px] font-bold text-purple-700 uppercase mb-1">Shift Handoff Note</div>
+                <div className="text-sm text-purple-900 italic">&ldquo;{data.handoffNote}&rdquo;</div>
+              </div>
+              <div className="p-3 bg-primary-soft border border-primary/30 rounded-lg">
+                <div className="text-[10px] font-bold text-primary-dark uppercase mb-1">Next Step</div>
+                <div className="text-sm">{data.recommendedNextStep}</div>
+                <div className="text-xs text-muted-foreground mt-1">Est. resolution: {data.estimatedResolutionTime}</div>
+              </div>
+            </>
+          ) : <div className="text-center py-8 text-sm text-muted-foreground">No summary available</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ActivityTab({
+  activities,
+}: {
+  activities: Array<{ id: string; type: string; text: string; time: string }>;
+}) {
+  const typeIcon = (type: string) => {
+    switch (type) {
+      case "sentiment":
+        return <span className="text-sm">🧠</span>;
+      case "reply":
+        return <span className="text-sm">💬</span>;
+      case "analysis":
+        return <Sparkles className="h-3.5 w-3.5 text-primary" />;
+      case "action":
+        return <span className="text-sm">⚡</span>;
+      default:
+        return <span className="text-sm">📌</span>;
+    }
+  };
+
+  const typeBg = (type: string) => {
+    switch (type) {
+      case "sentiment":
+        return "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800";
+      case "reply":
+        return "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800";
+      case "analysis":
+        return "bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800";
+      case "action":
+        return "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800";
+      default:
+        return "bg-secondary border-border";
+    }
+  };
+
+  if (activities.length === 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+        <span className="text-2xl mb-2">🤖</span>
+        <h4 className="font-semibold text-foreground">No AI activity yet</h4>
+        <p className="text-xs text-muted-foreground mt-1">
+          AI will automatically detect sentiment, suggest replies, and analyze conversations.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto p-3 space-y-2">
+      <div className="bg-primary-soft border border-primary/30 rounded-lg p-3">
+        <span className="text-[11px] uppercase tracking-wider text-primary-dark dark:text-accent-foreground font-bold">
+          Live AI Activity
+        </span>
+        <p className="text-xs text-muted-foreground mt-1">
+          Real-time log of AI detections and automated actions.
+        </p>
+      </div>
+      {[...activities].reverse().map((activity) => (
+        <div
+          key={activity.id}
+          className={cn("flex items-start gap-3 p-2.5 rounded-lg border animate-fade-in", typeBg(activity.type))}
+        >
+          <div className="mt-0.5 shrink-0">{typeIcon(activity.type)}</div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-foreground">{activity.text}</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">{activity.time}</p>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

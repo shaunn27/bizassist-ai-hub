@@ -13,7 +13,12 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as OrdersRouteImport } from './routes/orders'
 import { Route as MessagesRouteImport } from './routes/messages'
 import { Route as MeetingsRouteImport } from './routes/meetings'
+import { Route as IntelligenceRouteImport } from './routes/intelligence'
+import { Route as IntegrationsRouteImport } from './routes/integrations'
+import { Route as ImportRouteImport } from './routes/import'
+import { Route as ForecastRouteImport } from './routes/forecast'
 import { Route as CustomersRouteImport } from './routes/customers'
+import { Route as CopilotRouteImport } from './routes/copilot'
 import { Route as CatalogRouteImport } from './routes/catalog'
 import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as IndexRouteImport } from './routes/index'
@@ -38,9 +43,34 @@ const MeetingsRoute = MeetingsRouteImport.update({
   path: '/meetings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const IntelligenceRoute = IntelligenceRouteImport.update({
+  id: '/intelligence',
+  path: '/intelligence',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IntegrationsRoute = IntegrationsRouteImport.update({
+  id: '/integrations',
+  path: '/integrations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ImportRoute = ImportRouteImport.update({
+  id: '/import',
+  path: '/import',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ForecastRoute = ForecastRouteImport.update({
+  id: '/forecast',
+  path: '/forecast',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CustomersRoute = CustomersRouteImport.update({
   id: '/customers',
   path: '/customers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CopilotRoute = CopilotRouteImport.update({
+  id: '/copilot',
+  path: '/copilot',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CatalogRoute = CatalogRouteImport.update({
@@ -63,7 +93,12 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRoute
   '/catalog': typeof CatalogRoute
+  '/copilot': typeof CopilotRoute
   '/customers': typeof CustomersRoute
+  '/forecast': typeof ForecastRoute
+  '/import': typeof ImportRoute
+  '/integrations': typeof IntegrationsRoute
+  '/intelligence': typeof IntelligenceRoute
   '/meetings': typeof MeetingsRoute
   '/messages': typeof MessagesRoute
   '/orders': typeof OrdersRoute
@@ -73,7 +108,12 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRoute
   '/catalog': typeof CatalogRoute
+  '/copilot': typeof CopilotRoute
   '/customers': typeof CustomersRoute
+  '/forecast': typeof ForecastRoute
+  '/import': typeof ImportRoute
+  '/integrations': typeof IntegrationsRoute
+  '/intelligence': typeof IntelligenceRoute
   '/meetings': typeof MeetingsRoute
   '/messages': typeof MessagesRoute
   '/orders': typeof OrdersRoute
@@ -84,7 +124,12 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRoute
   '/catalog': typeof CatalogRoute
+  '/copilot': typeof CopilotRoute
   '/customers': typeof CustomersRoute
+  '/forecast': typeof ForecastRoute
+  '/import': typeof ImportRoute
+  '/integrations': typeof IntegrationsRoute
+  '/intelligence': typeof IntelligenceRoute
   '/meetings': typeof MeetingsRoute
   '/messages': typeof MessagesRoute
   '/orders': typeof OrdersRoute
@@ -96,7 +141,12 @@ export interface FileRouteTypes {
     | '/'
     | '/analytics'
     | '/catalog'
+    | '/copilot'
     | '/customers'
+    | '/forecast'
+    | '/import'
+    | '/integrations'
+    | '/intelligence'
     | '/meetings'
     | '/messages'
     | '/orders'
@@ -106,7 +156,12 @@ export interface FileRouteTypes {
     | '/'
     | '/analytics'
     | '/catalog'
+    | '/copilot'
     | '/customers'
+    | '/forecast'
+    | '/import'
+    | '/integrations'
+    | '/intelligence'
     | '/meetings'
     | '/messages'
     | '/orders'
@@ -116,7 +171,12 @@ export interface FileRouteTypes {
     | '/'
     | '/analytics'
     | '/catalog'
+    | '/copilot'
     | '/customers'
+    | '/forecast'
+    | '/import'
+    | '/integrations'
+    | '/intelligence'
     | '/meetings'
     | '/messages'
     | '/orders'
@@ -127,7 +187,12 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AnalyticsRoute: typeof AnalyticsRoute
   CatalogRoute: typeof CatalogRoute
+  CopilotRoute: typeof CopilotRoute
   CustomersRoute: typeof CustomersRoute
+  ForecastRoute: typeof ForecastRoute
+  ImportRoute: typeof ImportRoute
+  IntegrationsRoute: typeof IntegrationsRoute
+  IntelligenceRoute: typeof IntelligenceRoute
   MeetingsRoute: typeof MeetingsRoute
   MessagesRoute: typeof MessagesRoute
   OrdersRoute: typeof OrdersRoute
@@ -164,11 +229,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MeetingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/intelligence': {
+      id: '/intelligence'
+      path: '/intelligence'
+      fullPath: '/intelligence'
+      preLoaderRoute: typeof IntelligenceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/integrations': {
+      id: '/integrations'
+      path: '/integrations'
+      fullPath: '/integrations'
+      preLoaderRoute: typeof IntegrationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/import': {
+      id: '/import'
+      path: '/import'
+      fullPath: '/import'
+      preLoaderRoute: typeof ImportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/forecast': {
+      id: '/forecast'
+      path: '/forecast'
+      fullPath: '/forecast'
+      preLoaderRoute: typeof ForecastRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/customers': {
       id: '/customers'
       path: '/customers'
       fullPath: '/customers'
       preLoaderRoute: typeof CustomersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/copilot': {
+      id: '/copilot'
+      path: '/copilot'
+      fullPath: '/copilot'
+      preLoaderRoute: typeof CopilotRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/catalog': {
@@ -199,7 +299,12 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AnalyticsRoute: AnalyticsRoute,
   CatalogRoute: CatalogRoute,
+  CopilotRoute: CopilotRoute,
   CustomersRoute: CustomersRoute,
+  ForecastRoute: ForecastRoute,
+  ImportRoute: ImportRoute,
+  IntegrationsRoute: IntegrationsRoute,
+  IntelligenceRoute: IntelligenceRoute,
   MeetingsRoute: MeetingsRoute,
   MessagesRoute: MessagesRoute,
   OrdersRoute: OrdersRoute,
