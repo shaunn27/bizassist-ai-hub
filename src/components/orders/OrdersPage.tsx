@@ -86,7 +86,7 @@ export function OrdersPage() {
       toast("Item quantity must be greater than 0.", "error");
       return;
     }
-    if (!Number.isFinite(price) || price < 0) {
+    if (!Number.isFinite(selectedProduct.price) || selectedProduct.price < 0) {
       toast("Price per item must be 0 or greater.", "error");
       return;
     }

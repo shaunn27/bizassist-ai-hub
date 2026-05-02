@@ -4,6 +4,7 @@ import { mockOrders, type Order } from "@/data/mockOrders";
 import { mockMeetings, type Meeting } from "@/data/mockMeetings";
 import { listPersistedChats, upsertPersistedChat } from "@/server/chat.functions";
 import { listLocalChatHistories } from "@/server/chatFiles.functions";
+import { listLocalOrders, saveLocalOrder } from "@/server/orderFiles.functions";
 import {
   avatarColorFromSeed,
   makeCustomerId,
@@ -283,6 +284,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadOrders = async () => {
+      try {
+        const result = await listLocalOrders();
+        if (cancelled) return;
+        
+        if (result.ok && result.orders.length > 0) {
+          setOrders(prev => {
+            const map = new Map(prev.map(o => [o.id, o]));
+            for (const order of result.orders) {
+              map.set(order.id, order);
+            }
+            // Sort by received time descending (simplistic)
+            return Array.from(map.values()).sort((a, b) => b.id.localeCompare(a.id));
+          });
+        }
+      } catch (err: unknown) {
+        console.debug("Failed to load local orders:", err);
+      }
+    };
+
+    void loadOrders();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const toggleTheme = () => setTheme((t) => (t === "light" ? "dark" : "light"));
 
   const createOrder = (input: {
@@ -306,7 +337,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       customerName: input.customerName,
       items: input.items,
       total: input.total,
-      source: "WhatsApp",
+      source: "WhatsApp", // or "Manual" if you prefer
       receivedAt: time,
       status: "Pending",
       chatExcerpt: input.chatExcerpt,
@@ -319,6 +350,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
 
     setOrders((prev) => [order, ...prev]);
+
+    // Asynchronously save to file
+    void saveLocalOrder({ data: order }).catch((err: unknown) => {
+      console.error("Failed to save local order:", err);
+    });
+
     return order;
   };
 
