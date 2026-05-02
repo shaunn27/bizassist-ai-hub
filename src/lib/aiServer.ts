@@ -1,23 +1,23 @@
 import { createServerFn } from "@tanstack/react-start";
 
-const ILMU_BASE_URL = "https://api.ilmu.ai/v1";
+const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 
-type IlmuRole = "system" | "user" | "assistant";
+type GeminiRole = "system" | "user" | "assistant";
 
-type IlmuMessage = {
-  role: IlmuRole;
+type GeminiMessage = {
+  role: GeminiRole;
   content: string;
 };
 
-type IlmuChatInput = {
+type GeminiChatInput = {
   apiKey: string;
   model: string;
-  messages: IlmuMessage[];
+  messages: GeminiMessage[];
   maxTokens?: number;
   temperature?: number;
 };
 
-function ensureValidInput(data: IlmuChatInput): IlmuChatInput {
+function ensureValidInput(data: GeminiChatInput): GeminiChatInput {
   if (!data.apiKey?.trim()) {
     throw new Error("Missing API key.");
   }
@@ -35,46 +35,54 @@ function ensureValidInput(data: IlmuChatInput): IlmuChatInput {
   };
 }
 
-function extractTextContent(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
+function toGeminiContents(messages: GeminiMessage[]) {
+  return messages.map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: m.content }],
+  }));
+}
 
-  return content
+function extractGeminiText(payload: unknown): string {
+  if (!payload || typeof payload !== "object") return "";
+  const candidates = (payload as { candidates?: Array<{ content?: { parts?: unknown[] } }> })
+    .candidates;
+  const parts = candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts)) return "";
+  return parts
     .map((part) => {
-      if (typeof part === "string") return part;
       if (!part || typeof part !== "object") return "";
-      const maybeText = (part as { text?: unknown }).text;
-      return typeof maybeText === "string" ? maybeText : "";
+      const text = (part as { text?: unknown }).text;
+      return typeof text === "string" ? text : "";
     })
     .join("\n")
     .trim();
 }
 
-export const callIlmuChatServer = createServerFn({ method: "POST" })
-  .inputValidator((data: IlmuChatInput) => ensureValidInput(data))
+export const callGeminiChatServer = createServerFn({ method: "POST" })
+  .inputValidator((data: GeminiChatInput) => ensureValidInput(data))
   .handler(async ({ data }) => {
-    const res = await fetch(`${ILMU_BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${data.apiKey}`,
+    const res = await fetch(
+      `${GEMINI_BASE_URL}/models/${data.model}:generateContent?key=${data.apiKey}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: toGeminiContents(data.messages),
+          generationConfig: {
+            maxOutputTokens: data.maxTokens ?? 1500,
+            temperature: data.temperature ?? 0.2,
+          },
+        }),
       },
-      body: JSON.stringify({
-        model: data.model,
-        max_tokens: data.maxTokens ?? 1500,
-        temperature: data.temperature ?? 0.2,
-        messages: data.messages,
-      }),
-    });
+    );
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`Ilmu API ${res.status}: ${text.slice(0, 300)}`);
+      throw new Error(`Gemini API ${res.status}: ${text.slice(0, 300)}`);
     }
 
-    const payload = (await res.json()) as {
-      choices?: Array<{ message?: { content?: unknown } }>;
-    };
-
-    return extractTextContent(payload?.choices?.[0]?.message?.content);
+    const payload = await res.json();
+    return extractGeminiText(payload);
   });

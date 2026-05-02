@@ -20,7 +20,6 @@ import { mockCustomers, type Customer } from "@/data/mockCustomers";
 import { mockProducts } from "@/data/mockProducts";
 import { mockMeetings } from "@/data/mockMeetings";
 import { formatChatForAI, buildContextBlock } from "@/utils/formatChat";
-import type { AIAnalysis } from "@/utils/parseAIResponse";
 import type { ChatActionPlan, ActionProposal } from "@/utils/chatActions";
 import { parseWhatsAppExport } from "@/utils/parseWhatsAppExport";
 import { SLATimer } from "@/components/shared/SLATimer";
@@ -79,7 +78,7 @@ export function MessagesPage() {
   const { analyze, chatWithAI, proposeActions, loading: aiLoading, error: aiError } = useAI();
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<"analysis" | "chat" | "actions">("analysis");
-  const [analyses, setAnalyses] = useState<Record<string, AIAnalysis | null>>({});
+  const [analyses, setAnalyses] = useState<Record<string, string | null>>({});
   const [actionPlans, setActionPlans] = useState<Record<string, ChatActionPlan | null>>({});
   const [analyzing, setAnalyzing] = useState(false);
   const [planning, setPlanning] = useState(false);
@@ -91,6 +90,7 @@ export function MessagesPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
   const [customerNameOverride, setCustomerNameOverride] = useState("");
+  const [whatsAppUserName, setWhatsAppUserName] = useState("");
   const [agentNamesInput, setAgentNamesInput] = useState("You, Me, Agent");
   const [importing, setImporting] = useState(false);
   const [showAnalysisBanner, setShowAnalysisBanner] = useState(false);
@@ -153,16 +153,22 @@ export function MessagesPage() {
     try {
       const parsed = parseWhatsAppExport(importText, {
         customerNameOverride: customerNameOverride.trim() || undefined,
-        agentNames: agentNamesInput
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
+        agentNames: [
+          ...new Set(
+            agentNamesInput
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean)
+              .concat(whatsAppUserName.trim() ? [whatsAppUserName.trim()] : []),
+          ),
+        ],
       });
 
       const result = await importWhatsAppChat(parsed);
       setImportOpen(false);
       setImportText("");
       setCustomerNameOverride("");
+      setWhatsAppUserName("");
       toast(`Imported chat for ${parsed.customerName}`, "success");
       setActiveChatId(result.customerId);
     } catch (err: unknown) {
@@ -608,7 +614,6 @@ export function MessagesPage() {
           <AnalysisTab
             analysis={activeAnalysis}
             onRun={runAnalysis}
-            onUseReply={(r) => setChatInput(r)}
             loading={analyzing}
           />
         ) : activeTab === "actions" ? (
@@ -770,6 +775,18 @@ export function MessagesPage() {
 
           <div>
             <label className="text-xs font-medium text-foreground">
+              Your WhatsApp name (optional)
+            </label>
+            <input
+              value={whatsAppUserName}
+              onChange={(e) => setWhatsAppUserName(e.target.value)}
+              className="mt-1 w-full h-9 px-3 rounded-md border border-border bg-background text-sm"
+              placeholder="The name that appears on your messages"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-foreground">
               Agent names (comma separated)
             </label>
             <input
@@ -801,22 +818,19 @@ export function MessagesPage() {
 function AnalysisTab({
   analysis,
   onRun,
-  onUseReply,
   loading,
 }: {
-  analysis: AIAnalysis | null;
+  analysis: string | null;
   onRun: () => void;
-  onUseReply: (r: string) => void;
   loading: boolean;
 }) {
-  const [checked, setChecked] = useState<Record<number, boolean>>({});
   if (!analysis && !loading) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
         <Sparkles className="h-8 w-8 text-primary mb-3" />
         <h4 className="font-semibold text-foreground">No analysis yet</h4>
         <p className="text-xs text-muted-foreground mt-1 mb-4">
-          Run AI to analyze this conversation, extract orders, flag issues and suggest a reply.
+          Run AI to extract the business-relevant items from this conversation.
         </p>
         <button
           onClick={onRun}
@@ -836,115 +850,13 @@ function AnalysisTab({
   }
   if (!analysis) return null;
 
-  const sevColor = (s: string): "danger" | "warning" | "primary" =>
-    s === "critical" ? "danger" : s === "warning" ? "warning" : "primary";
-
   return (
     <div className="flex-1 overflow-y-auto p-3 space-y-3">
-      <div className="bg-primary-soft border border-primary/30 rounded-lg p-3">
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] uppercase tracking-wider text-primary-dark dark:text-accent-foreground font-bold">
-            {analysis.requestType} confidence
-          </span>
-          <span className="font-bold text-primary text-lg">{analysis.confidenceScore}%</span>
-        </div>
-        <div className="mt-1.5 text-[11px] text-muted-foreground">
-          Detected:{" "}
-          <span className="font-semibold text-foreground">{analysis.detectedLanguage}</span>
-        </div>
-      </div>
-
-      <Section title="Order Summary">
-        <dl className="text-xs space-y-1">
-          <Row k="Items" v={analysis.orderSummary.items.join(", ") || "—"} />
-          <Row k="Quantity" v={analysis.orderSummary.quantity || "—"} />
-          <Row
-            k="Address"
-            v={analysis.orderSummary.deliveryAddress || "—"}
-            missing={!analysis.orderSummary.deliveryAddress}
-          />
-          <Row
-            k="Deadline"
-            v={analysis.orderSummary.deadline || "—"}
-            missing={!analysis.orderSummary.deadline}
-          />
-          <Row k="Notes" v={analysis.orderSummary.specialInstructions || "—"} />
-        </dl>
-        {analysis.orderSummary.missingFields.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {analysis.orderSummary.missingFields.map((f, i) => (
-              <Badge key={i} variant="warning">
-                ⚠ {f}
-              </Badge>
-            ))}
-          </div>
-        )}
-      </Section>
-
-      {analysis.confirmedDetails.length > 0 && (
-        <Section title="Confirmed Details">
-          <ul className="text-xs space-y-1">
-            {analysis.confirmedDetails.map((d, i) => (
-              <li key={i} className="flex gap-2">
-                <span className="text-success">✓</span>
-                <span className="text-foreground">{d}</span>
-              </li>
-            ))}
-          </ul>
-        </Section>
-      )}
-
-      {analysis.flags.length > 0 && (
-        <Section title="Flags & Risks">
-          <div className="space-y-2">
-            {analysis.flags.map((f, i) => (
-              <div
-                key={i}
-                className={cn(
-                  "rounded-md p-2.5 border",
-                  f.severity === "critical"
-                    ? "bg-destructive/5 border-destructive/30"
-                    : f.severity === "warning"
-                      ? "bg-warning/5 border-warning/30"
-                      : "bg-primary-soft border-primary/30",
-                )}
-              >
-                <div className="flex items-center gap-1.5">
-                  <Badge variant={sevColor(f.severity)}>{f.severity.toUpperCase()}</Badge>
-                  <span className="text-[11px] font-bold text-foreground">{f.type}</span>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">{f.description}</p>
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {analysis.unclearItems.length > 0 && (
-        <Section title="Needs Clarification">
-          <div className="space-y-2">
-            {analysis.unclearItems.map((u, i) => (
-              <div key={i} className="text-xs border border-border rounded-md p-2.5">
-                <div className="font-semibold text-foreground">{u.issue}</div>
-                <div className="text-muted-foreground mt-1">{u.whyItMatters}</div>
-                <div className="mt-1.5 text-primary font-medium">Ask: "{u.whatToAsk}"</div>
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      <Section title="Suggested Reply">
+      <Section title="Analysis Results">
         <div className="text-xs bg-secondary p-3 rounded-md text-foreground whitespace-pre-wrap">
-          {analysis.suggestedReply}
+          {analysis}
         </div>
-        <div className="mt-2 flex gap-2">
-          <button
-            onClick={() => onUseReply(analysis.suggestedReply)}
-            className="flex-1 h-8 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary-dark"
-          >
-            Use This Reply
-          </button>
+        <div className="mt-2">
           <button
             onClick={onRun}
             className="h-8 px-3 rounded-md border border-border text-xs font-semibold hover:bg-accent"
@@ -952,33 +864,6 @@ function AnalysisTab({
             Regenerate
           </button>
         </div>
-      </Section>
-
-      <Section title="Agent Checklist">
-        <ul className="space-y-1.5">
-          {analysis.agentChecklist.map((step, i) => (
-            <li key={i} className="flex items-start gap-2 text-xs">
-              <input
-                type="checkbox"
-                checked={!!checked[i]}
-                onChange={(e) => setChecked((c) => ({ ...c, [i]: e.target.checked }))}
-                className="mt-0.5 h-3.5 w-3.5 accent-primary"
-              />
-              <span
-                className={cn(
-                  "text-foreground",
-                  checked[i] && "line-through text-muted-foreground",
-                )}
-              >
-                {step}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </Section>
-
-      <Section title="Customer Behavior">
-        <p className="text-xs text-muted-foreground">{analysis.customerBehaviorNote}</p>
       </Section>
     </div>
   );
@@ -991,17 +876,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
         {title}
       </h5>
       {children}
-    </div>
-  );
-}
-
-function Row({ k, v, missing }: { k: string; v: string; missing?: boolean }) {
-  return (
-    <div className="flex gap-2">
-      <dt className="text-muted-foreground w-20 shrink-0">{k}</dt>
-      <dd className={cn("text-foreground font-medium flex-1", missing && "text-warning italic")}>
-        {v}
-      </dd>
     </div>
   );
 }
