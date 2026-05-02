@@ -8,7 +8,7 @@ import {
   testGeminiConnection,
 } from "@/server/ai.functions";
 
-const DEFAULT_MODEL = "gemini-2.5-flash";
+const DEFAULT_MODEL = "deepseek-v4-flash";
 
 export async function testAIModel(opts: {
   apiKey: string;

@@ -47,7 +47,7 @@ export type Settings = {
 
 const DEFAULT_SETTINGS: Settings = {
   apiKey: "",
-  model: "gemini-2.5-flash",
+  model: "deepseek-v4-flash",
   soundOnNewMessage: true,
   sla5: true,
   sla15: true,

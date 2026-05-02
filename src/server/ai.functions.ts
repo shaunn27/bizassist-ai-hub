@@ -2,8 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { parseChatActionPlan, type ChatActionPlan } from "@/utils/chatActions";
 
-const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
-const DEFAULT_MODEL = "gemini-2.5-flash";
+const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
+const DEFAULT_MODEL = "deepseek-v4-flash";
 
 const messageSchema = z.object({
   role: z.enum(["user", "assistant"]),
@@ -23,43 +23,33 @@ async function readApiError(res: Response): Promise<string> {
 
 function requireApiKey(apiKey: string): string {
   const envKey =
-    (typeof process !== "undefined" ? process.env.GEMINI_API_KEY : undefined) ||
-    (typeof process !== "undefined" ? process.env.VITE_GEMINI_API_KEY : undefined) ||
+    (typeof process !== "undefined" ? process.env.DEEPSEEK_API_KEY : undefined) ||
+    (typeof process !== "undefined" ? process.env.VITE_DEEPSEEK_API_KEY : undefined) ||
     "";
   const key = (apiKey || "").trim() || envKey.trim();
   if (!key) throw new Error("Missing API key. Set it in Settings first.");
   return key;
 }
 
-function stripModelPrefix(name: string | undefined): string {
-  if (!name) return "";
-  return name.replace(/^models\//, "");
+function toMessages(
+  systemPrompt: string | undefined,
+  messages: Array<{ role: "user" | "assistant"; content: string }>,
+) {
+  const result: Array<{ role: "system" | "user" | "assistant"; content: string }> = [];
+  if (systemPrompt) result.push({ role: "system", content: systemPrompt });
+  for (const m of messages) {
+    result.push({ role: m.role, content: m.content });
+  }
+  return result;
 }
 
-function toGeminiContents(messages: Array<{ role: "user" | "assistant"; content: string }>) {
-  return messages.map((m) => ({
-    role: m.role === "assistant" ? "model" : "user",
-    parts: [{ text: m.content }],
-  }));
-}
-
-function extractGeminiText(payload: unknown): string {
+function extractText(payload: unknown): string {
   if (!payload || typeof payload !== "object") return "";
-  const candidates = (payload as { candidates?: Array<{ content?: { parts?: unknown[] } }> })
-    .candidates;
-  const parts = candidates?.[0]?.content?.parts;
-  if (!Array.isArray(parts)) return "";
-  return parts
-    .map((part) => {
-      if (!part || typeof part !== "object") return "";
-      const text = (part as { text?: unknown }).text;
-      return typeof text === "string" ? text : "";
-    })
-    .join("\n")
-    .trim();
+  const choices = (payload as { choices?: Array<{ message?: { content?: string } }> }).choices;
+  return choices?.[0]?.message?.content?.trim() || "";
 }
 
-async function callGeminiChat(opts: {
+async function callDeepSeekChat(opts: {
   apiKey: string;
   model: string;
   systemPrompt?: string;
@@ -67,20 +57,17 @@ async function callGeminiChat(opts: {
   maxTokens?: number;
 }): Promise<string> {
   const model = opts.model || DEFAULT_MODEL;
-  const res = await fetch(`${GEMINI_BASE_URL}/models/${model}:generateContent?key=${opts.apiKey}`, {
+  const res = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      Authorization: `Bearer ${opts.apiKey}`,
     },
     body: JSON.stringify({
-      contents: toGeminiContents(opts.messages),
-      ...(opts.systemPrompt
-        ? { systemInstruction: { parts: [{ text: opts.systemPrompt }] } }
-        : {}),
-      generationConfig: {
-        maxOutputTokens: opts.maxTokens ?? 1500,
-        temperature: 0.2,
-      },
+      model,
+      messages: toMessages(opts.systemPrompt, opts.messages),
+      max_tokens: opts.maxTokens ?? 1500,
+      temperature: 0.2,
     }),
   });
 
@@ -90,7 +77,7 @@ async function callGeminiChat(opts: {
   }
 
   const payload = await res.json();
-  return extractGeminiText(payload);
+  return extractText(payload);
 }
 
 export const testGeminiConnection = createServerFn({ method: "POST" })
@@ -102,29 +89,28 @@ export const testGeminiConnection = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const apiKey = requireApiKey(data.apiKey);
+    const model = data.model?.trim() || DEFAULT_MODEL;
 
-    const modelsRes = await fetch(`${GEMINI_BASE_URL}/models?key=${apiKey}`, {
-      method: "GET",
+    // Test with a simple completion
+    const res = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: "Hi" }],
+        max_tokens: 5,
+      }),
     });
 
-    if (!modelsRes.ok) {
-      const detail = await readApiError(modelsRes);
-      throw new Error(`Connection test failed (${modelsRes.status}): ${detail}`);
+    if (!res.ok) {
+      const detail = await readApiError(res);
+      throw new Error(`Connection test failed (${res.status}): ${detail}`);
     }
 
-    const modelResponse = (await modelsRes.json()) as {
-      models?: Array<{ name?: string }>;
-    };
-    const availableModels = (modelResponse.models || [])
-      .map((m) => stripModelPrefix(m.name))
-      .filter((name): name is string => !!name);
-
-    const requestedModel = data.model?.trim() || DEFAULT_MODEL;
-    const selectedModel = availableModels.includes(requestedModel)
-      ? requestedModel
-      : (availableModels[0] ?? requestedModel);
-
-    return { ok: true, selectedModel, availableModels };
+    return { ok: true, selectedModel: model, availableModels: [model] };
   });
 
 export const analyzeConversation = createServerFn({ method: "POST" })
@@ -198,7 +184,7 @@ export const analyzeConversation = createServerFn({ method: "POST" })
       .filter(Boolean)
       .join("\n");
 
-    const raw = await callGeminiChat({
+    const raw = await callDeepSeekChat({
       apiKey,
       model: data.model,
       messages: [{ role: "user", content: userText }],
@@ -233,7 +219,7 @@ export const chatWithAiAssistant = createServerFn({ method: "POST" })
         ]
       : [];
 
-    const reply = await callGeminiChat({
+    const reply = await callDeepSeekChat({
       apiKey,
       model: data.model,
       systemPrompt:
@@ -276,7 +262,7 @@ export const generateChatActionPlan = createServerFn({ method: "POST" })
       .filter(Boolean)
       .join("\n\n");
 
-    const raw = await callGeminiChat({
+    const raw = await callDeepSeekChat({
       apiKey,
       model: data.model,
       systemPrompt:
