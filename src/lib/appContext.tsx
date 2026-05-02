@@ -298,10 +298,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Load persisted state
   useEffect(() => {
     if (typeof window === "undefined") return;
-    // Clear stale business selection that points to businesses with no mock data
     const savedBusiness = localStorage.getItem("ba_business");
-    if (savedBusiness && savedBusiness !== DEFAULT_BUSINESS) {
-      localStorage.removeItem("ba_business");
+    if (savedBusiness && BUSINESSES.includes(savedBusiness)) {
+      setBusiness(savedBusiness);
     }
     const t = localStorage.getItem("ba_theme") as "light" | "dark" | null;
     if (t) setTheme(t);
