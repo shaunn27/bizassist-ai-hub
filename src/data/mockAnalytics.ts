@@ -61,3 +61,12 @@ export const recentFlags = [
   { severity: "warning", text: "Ambiguous order ref — Nurul H.", customerId: "c4" },
   { severity: "info", text: "Price inquiry unanswered — David T.", customerId: "c5" },
 ];
+
+export const aiImpactMetrics = [
+  { label: "Response Time Saved", value: "62%", delta: "↓ from 8 min avg", icon: "clock" },
+  { label: "Orders via AI", value: "47", delta: "↑ auto-detected", icon: "cart" },
+  { label: "Avg Handle Time", value: "2.3 min", delta: "↓ 71% reduction", icon: "timer" },
+  { label: "Customer Satisfaction", value: "+18%", delta: "↑ CSAT improvement", icon: "heart" },
+  { label: "Messages Analyzed", value: "312", delta: "This week", icon: "chat" },
+  { label: "Escalations Prevented", value: "8", delta: "Early detection", icon: "shield" },
+];

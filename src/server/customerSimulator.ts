@@ -1,5 +1,5 @@
 /**
- * Customer Simulator — uses a dedicated Gemini API key to generate
+ * Customer Simulator — uses DeepSeek API to generate
  * realistic customer replies for demo purposes.
  *
  * Each customer has a unique persona, background, and communication style.
@@ -9,7 +9,7 @@
 
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { callGeminiChat, DEFAULT_MODEL } from "./geminiPool";
+import { callGeminiChat, DEFAULT_MODEL } from "./deepseekPool";
 
 /* ------------------------------------------------------------------ */
 /*  Customer Persona Definitions                                       */
@@ -329,7 +329,7 @@ ${productCatalog}
 }
 
 /* ------------------------------------------------------------------ */
-/*  Call Gemini API directly with the dedicated key                    */
+/*  Call DeepSeek API directly with the dedicated key                  */
 /* ------------------------------------------------------------------ */
 
 async function callSimulatorAPI(

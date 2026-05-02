@@ -296,6 +296,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Load persisted state
   useEffect(() => {
     if (typeof window === "undefined") return;
+    // Clear stale business selection that points to businesses with no mock data
+    const savedBusiness = localStorage.getItem("ba_business");
+    if (savedBusiness && savedBusiness !== DEFAULT_BUSINESS) {
+      localStorage.removeItem("ba_business");
+    }
     const t = localStorage.getItem("ba_theme") as "light" | "dark" | null;
     if (t) setTheme(t);
     const s = localStorage.getItem("ba_settings");
@@ -307,8 +312,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         console.debug("Failed to parse stored settings:", err);
       }
     }
-    const b = localStorage.getItem("ba_business");
-    if (b && BUSINESS_DATA[b]) setBusiness(b);
   }, []);
 
   useEffect(() => {
@@ -539,6 +542,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // ── Trigger AI customer simulation after a short delay ──
     setTimeout(() => {
+      // Guard: skip if a simulation is already in progress for this customer
+      setIsTyping((prev) => {
+        if (prev[customerId]) return prev; // already simulating
+        return { ...prev, [customerId]: true };
+      });
+
       setChats((currentChats) => {
         const thread = currentChats.find((c) => c.customerId === customerId);
         if (!thread) return currentChats;
@@ -552,9 +561,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
               }`,
           )
           .join("; ");
-
-        // Set typing status
-        setIsTyping((prev) => ({ ...prev, [customerId]: true }));
 
         // Fire off the simulation API call
         void simulateCustomerReply({
@@ -648,7 +654,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               unread: c.unread + 1,
               lastMessagePreview: text,
               waitingMinutes: 1, // trigger some waiting state
-              flagged: "warning", // flag for attention in simulation
+              flagged: "warning" as const,
             }
           : c,
       );

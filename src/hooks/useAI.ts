@@ -3,9 +3,16 @@ import { useApp } from "@/lib/appContext";
 import { type ChatActionPlan } from "@/utils/chatActions";
 import {
   analyzeConversation,
+  analyzeSentiment,
   chatWithAiAssistant,
   generateChatActionPlan,
-  testGeminiConnection,
+  generateSmartReplies,
+  testConnection as testConnectionFn,
+  generateConversationSummary,
+  detectOrderIntent,
+  scoreConversationPriority,
+  generateAutoPilotReply,
+  generateDailyBriefing,
 } from "@/server/ai.functions";
 
 const DEFAULT_MODEL = "deepseek-v4-flash";
@@ -125,7 +132,7 @@ export function useAI() {
     setLoading(true);
     setError(null);
     try {
-      return await testGeminiConnection({
+      return await testConnectionFn({
         data: {
           apiKey: resolveApiKey(),
           model: resolveModel(),
@@ -140,5 +147,112 @@ export function useAI() {
     }
   }, [resolveApiKey, resolveModel]);
 
-  return { analyze, chatWithAI, proposeActions, testConnection, loading, error };
+  const getSmartReplies = useCallback(
+    async (formattedConversation: string): Promise<string[]> => {
+      try {
+        const result = await generateSmartReplies({
+          data: {
+            apiKey: resolveApiKey(),
+            model: resolveModel(),
+            formattedConversation,
+          },
+        });
+        return result.replies;
+      } catch {
+        return [];
+      }
+    },
+    [resolveApiKey, resolveModel],
+  );
+
+  const getSentiment = useCallback(
+    async (lastMessages: string): Promise<{ sentiment: string; emoji: string } | null> => {
+      try {
+        return await analyzeSentiment({
+          data: {
+            apiKey: resolveApiKey(),
+            model: resolveModel(),
+            lastMessages,
+          },
+        });
+      } catch {
+        return null;
+      }
+    },
+    [resolveApiKey, resolveModel],
+  );
+
+  const summarizeConversation = useCallback(
+    async (formattedConversation: string, customerProfile: string): Promise<any | null> => {
+      setLoading(true); setError(null);
+      try {
+        return await generateConversationSummary({
+          data: { apiKey: resolveApiKey(), model: resolveModel(), formattedConversation, customerProfile },
+        });
+      } catch (e: unknown) { const err = e instanceof Error ? e : new Error(String(e)); setError(err.message); return null; }
+      finally { setLoading(false); }
+    },
+    [resolveApiKey, resolveModel],
+  );
+
+  const detectOrder = useCallback(
+    async (formattedConversation: string, productCatalog: string): Promise<any | null> => {
+      try {
+        return await detectOrderIntent({
+          data: { apiKey: resolveApiKey(), model: resolveModel(), formattedConversation, productCatalog },
+        });
+      } catch { return null; }
+    },
+    [resolveApiKey, resolveModel],
+  );
+
+  const scorePriority = useCallback(
+    async (conversations: Array<{ customerId: string; customerName?: string; lastMessagePreview: string; waitingMinutes: number; unread: number; flagged: "critical" | "warning" | "info" | null; sentiment?: string }>): Promise<Array<{ customerId: string; score: number; reason: string }> | null> => {
+      try {
+        const result = await scoreConversationPriority({
+          data: { apiKey: resolveApiKey(), model: resolveModel(), conversations },
+        });
+        return result.scores;
+      } catch { return null; }
+    },
+    [resolveApiKey, resolveModel],
+  );
+
+  const autoPilotReply = useCallback(
+    async (formattedConversation: string, productCatalog: string): Promise<{ reply: string; autoAction: any } | null> => {
+      try {
+        return await generateAutoPilotReply({
+          data: { apiKey: resolveApiKey(), model: resolveModel(), formattedConversation, productCatalog },
+        });
+      } catch { return null; }
+    },
+    [resolveApiKey, resolveModel],
+  );
+
+  const getDailyBriefing = useCallback(
+    async (dashboardData: any): Promise<any | null> => {
+      try {
+        return await generateDailyBriefing({
+          data: { apiKey: resolveApiKey(), model: resolveModel(), dashboardData },
+        });
+      } catch { return null; }
+    },
+    [resolveApiKey, resolveModel],
+  );
+
+  return {
+    analyze,
+    chatWithAI,
+    proposeActions,
+    testConnection,
+    getSmartReplies,
+    getSentiment,
+    summarizeConversation,
+    detectOrder,
+    scorePriority,
+    autoPilotReply,
+    getDailyBriefing,
+    loading,
+    error,
+  };
 }
