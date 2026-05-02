@@ -31,6 +31,7 @@ import {
   persistConfirmedMeeting,
 } from "@/server/action.functions";
 import { saveLocalChatHistory } from "@/server/chatFiles.functions";
+import { getLocalChatAnalysis, saveLocalChatAnalysis } from "@/server/chatAnalysis.functions";
 
 type AIChatMsg = { role: "user" | "assistant"; content: string };
 
@@ -222,6 +223,25 @@ export function MessagesPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!activeChatId || !activeCustomer) return;
+    if (analyses[activeChatId]) return;
+
+    let cancelled = false;
+    const loadAnalysis = async () => {
+      const result = await getLocalChatAnalysis({
+        data: { customerName: activeCustomer.name },
+      });
+      if (cancelled || !result.ok || !result.content) return;
+      setAnalyses((prev) => ({ ...prev, [activeChatId]: result.content }));
+    };
+
+    void loadAnalysis();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeChatId, activeCustomer, analyses]);
+
   const productCatalogStr = mockProducts
     .map(
       (p) => `${p.name} (${p.sku}) RM${p.price} — stock ${p.stock === -1 ? "unlimited" : p.stock}`,
@@ -345,6 +365,14 @@ export function MessagesPage() {
     setAnalyzing(false);
     if (result) {
       setAnalyses((prev) => ({ ...prev, [activeChatId]: result }));
+      if (activeCustomer) {
+        const saveResult = await saveLocalChatAnalysis({
+          data: { customerName: activeCustomer.name, analysisText: result },
+        });
+        if (!saveResult.ok) {
+          toast("AI analysis saved locally failed.", "info");
+        }
+      }
       toast("AI analysis complete", "success");
     } else if (aiError) {
       toast(aiError, "error");
