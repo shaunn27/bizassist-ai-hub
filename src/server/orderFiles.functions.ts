@@ -130,14 +130,12 @@ export const saveLocalOrder = createServerFn({ method: "POST" })
         "--- END ---"
       ].join("\n");
 
-      // Generate a safe filename
-      const safeName = order.customerName.replace(/[^a-zA-Z0-9_-]/g, "_") || "Unknown";
-      const fileName = `${safeName}_${order.id}.txt`;
+      // Generate filename based only on customer name
+      const safeName = order.customerName.trim() || "Unknown";
+      const fileName = `${safeName}.txt`;
       const outPath = path.join(ORDERS_DIR, fileName);
 
       // Append if file exists, else create new
-      // If we append, it adds another order block to the same file.
-      // But typically we can just create a new file for this specific order to keep it clean.
       await fs.appendFile(outPath, "\n" + content + "\n", "utf-8");
 
       return { ok: true };
