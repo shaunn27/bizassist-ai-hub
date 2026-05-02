@@ -14,6 +14,8 @@ import {
   generateAutoPilotReply,
   generateDailyBriefing,
 } from "@/server/ai.functions";
+import { generateBusinessReport } from "@/server/report.functions";
+import { generateInvoice } from "@/server/invoice.functions";
 
 const DEFAULT_MODEL = "deepseek-v4-flash";
 
@@ -240,6 +242,28 @@ export function useAI() {
     [resolveApiKey, resolveModel],
   );
 
+  const getBusinessReport = useCallback(
+    async (reportData: any): Promise<any | null> => {
+      setLoading(true); setError(null);
+      try {
+        return await generateBusinessReport({ data: { apiKey: resolveApiKey(), model: resolveModel(), reportData } });
+      } catch (e: unknown) { const err = e instanceof Error ? e : new Error(String(e)); setError(err.message); throw err; }
+      finally { setLoading(false); }
+    },
+    [resolveApiKey, resolveModel],
+  );
+
+  const getInvoice = useCallback(
+    async (invoiceData: any): Promise<any | null> => {
+      setLoading(true); setError(null);
+      try {
+        return await generateInvoice({ data: { apiKey: resolveApiKey(), model: resolveModel(), invoiceData } });
+      } catch (e: unknown) { const err = e instanceof Error ? e : new Error(String(e)); setError(err.message); throw err; }
+      finally { setLoading(false); }
+    },
+    [resolveApiKey, resolveModel],
+  );
+
   return {
     analyze,
     chatWithAI,
@@ -252,6 +276,8 @@ export function useAI() {
     scorePriority,
     autoPilotReply,
     getDailyBriefing,
+    getBusinessReport,
+    getInvoice,
     loading,
     error,
   };

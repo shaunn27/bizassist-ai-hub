@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd";
-import { Download, FileText, X, Database, FileCheck2, Link2, Trash2, Plus } from "lucide-react";
+import { Download, FileText, X, Database, FileCheck2, Link2, Trash2, Plus, FileDown } from "lucide-react";
 import { useApp } from "@/lib/appContext";
 import { Badge } from "@/components/shared/Badge";
 import { toast } from "@/components/shared/Toast";
 import { cancelLocalOrder } from "@/server/cancelItem.functions";
+import { useAI } from "@/hooks/useAI";
+import { generateInvoicePDF } from "@/utils/pdfExport";
 import type { Order } from "@/data/mockOrders";
 import { cn } from "@/lib/utils";
 
@@ -16,9 +18,12 @@ const COLS: { key: Order["status"]; color: string; label: string }[] = [
 ];
 
 export function OrdersPage() {
-  const { orders, updateOrderStatus, deleteOrder, createOrder } = useApp();
+  const { orders, updateOrderStatus, deleteOrder, createOrder, business, customers } = useApp();
+  const { getInvoice } = useAI();
   const [active, setActive] = useState<Order | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [invoiceError, setInvoiceError] = useState<string | null>(null);
   const totalToday = orders.reduce((s, o) => s + (o.status !== "Delivered" ? o.total : 0), 0);
 
   const onDragEnd = (r: DropResult) => {
@@ -255,11 +260,47 @@ export function OrdersPage() {
                 <Database className="h-3.5 w-3.5" /> Link to Inventory
               </button>
               <button
-                onClick={() => toast("Quotation synced to main order system", "success")}
-                className="w-full h-9 rounded-md border border-border text-sm flex items-center justify-center gap-1.5"
+                onClick={async () => {
+                  if (!active) return;
+                  setInvoiceLoading(true);
+                  setInvoiceError(null);
+                  try {
+                    const cust = customers.find(c => c.id === active.customerId);
+                    const result = await getInvoice({
+                      orderId: active.id,
+                      customerName: active.customerName,
+                      customerPhone: cust?.phone,
+                      items: active.items,
+                      total: active.total,
+                      businessName: business,
+                      date: active.receivedAt,
+                      status: active.status,
+                      source: active.source,
+                      chatExcerpt: active.chatExcerpt,
+                    });
+                    if (result) {
+                      const doc = await generateInvoicePDF(result);
+                      doc.save(`Invoice-${result.invoiceNumber || active.id}.pdf`);
+                      toast(`Invoice generated: ${result.invoiceNumber}`, "success");
+                    } else {
+                      setInvoiceError("Failed to generate invoice. Check your API key in Settings.");
+                      toast("Failed to generate invoice", "error");
+                    }
+                  } catch (err: any) {
+                    setInvoiceError(err?.message || String(err));
+                    toast(err?.message || "Failed to generate invoice", "error");
+                  }
+                  setInvoiceLoading(false);
+                }}
+                disabled={invoiceLoading}
+                className="w-full h-9 rounded-md bg-primary text-primary-foreground text-sm font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50"
               >
-                <FileCheck2 className="h-3.5 w-3.5" /> Generate Quotation
+                <FileDown className="h-3.5 w-3.5" />
+                {invoiceLoading ? "Generating..." : "Generate Invoice (PDF)"}
               </button>
+              {invoiceError && (
+                <p className="text-xs text-destructive font-medium px-1">{invoiceError}</p>
+              )}
             </div>
           </div>
         </div>

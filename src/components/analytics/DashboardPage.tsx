@@ -31,6 +31,7 @@ import { useApp } from "@/lib/appContext";
 import { useAI } from "@/hooks/useAI";
 import { cn } from "@/lib/utils";
 import { simulateCustomerReply } from "@/server/customerSimulator";
+import { generateReportPDF } from "@/utils/pdfExport";
 
 const SIMULATION_MESSAGES = [
   { customerId: "c2", text: "Hi, I need to check my order status." },
@@ -109,7 +110,7 @@ export function DashboardPage() {
     orders,
     settings,
   } = useApp();
-  const { getDailyBriefing } = useAI();
+  const { getDailyBriefing, getBusinessReport, error: aiError } = useAI();
   const [isSimulating, setIsSimulating] = useState(false);
   const [simulatedMetrics, setSimulatedMetrics] = useState({
     messages: 47,
@@ -117,6 +118,10 @@ export function DashboardPage() {
   });
   const [briefing, setBriefing] = useState<any>(null);
   const [briefingLoading, setBriefingLoading] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [report, setReport] = useState<any>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
 
   const lowStock = products.filter((p) => p.stock !== -1 && p.stock <= 20);
   const upcoming = meetings.filter((m) => m.status !== "Done").slice(0, 3);
@@ -236,7 +241,59 @@ export function DashboardPage() {
             </p>
           </div>
           <div className="flex items-center gap-4">
-            <button className="group flex items-center gap-2 px-5 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl text-sm font-bold shadow-lg shadow-slate-900/20 dark:shadow-white/10 hover:shadow-xl hover:-translate-y-0.5 transition-all">
+            <button
+              onClick={async () => {
+                setReportOpen(true);
+                setReportLoading(true);
+                setReportError(null);
+                setReport(null);
+                try {
+                  const pending = orders.filter(o => o.status === "Pending");
+                  const completed = orders.filter(o => o.status === "Delivered");
+                  const productRevenue: Record<string, { name: string; quantity: number; revenue: number }> = {};
+                  for (const o of orders) {
+                    const key = o.items;
+                    if (!productRevenue[key]) productRevenue[key] = { name: o.items, quantity: 0, revenue: 0 };
+                    productRevenue[key].quantity++;
+                    productRevenue[key].revenue += o.total;
+                  }
+                  const topProducts = Object.values(productRevenue).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
+                  const customerSpent: Record<string, { name: string; orders: number; spent: number }> = {};
+                  for (const o of orders) {
+                    if (!customerSpent[o.customerId]) customerSpent[o.customerId] = { name: o.customerName, orders: 0, spent: 0 };
+                    customerSpent[o.customerId].orders++;
+                    customerSpent[o.customerId].spent += o.total;
+                  }
+                  const topCustomers = Object.values(customerSpent).sort((a, b) => b.spent - a.spent).slice(0, 5);
+                  const result = await getBusinessReport({
+                    businessName: business,
+                    period: "This Month",
+                    totalOrders: orders.length,
+                    totalRevenue: orders.reduce((s, o) => s + o.total, 0),
+                    pendingOrders: pending.length,
+                    completedOrders: completed.length,
+                    topProducts,
+                    topCustomers,
+                    openChats: chats.filter(c => c.status === "open").length,
+                    resolvedChats: chats.filter(c => c.status === "resolved").length,
+                    avgResponseTime: "4.2 min",
+                    sentimentBreakdown: { positive: 12, neutral: 8, negative: 3 },
+                    meetingsHeld: meetings.filter(m => m.status === "Done").length,
+                    upcomingMeetings: meetings.filter(m => m.status !== "Done").length,
+                    lowStockItems: products.filter(p => p.stock !== -1 && p.stock <= 20).map(p => ({ name: p.name, stock: p.stock })),
+                  });
+                  if (result) {
+                    setReport(result);
+                  } else {
+                    setReportError(aiError || "Server returned no result. Check your API key in Settings.");
+                  }
+                } catch (err: any) {
+                  setReportError(err?.message || String(err));
+                }
+                setReportLoading(false);
+              }}
+              className="group flex items-center gap-2 px-5 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl text-sm font-bold shadow-lg shadow-slate-900/20 dark:shadow-white/10 hover:shadow-xl hover:-translate-y-0.5 transition-all"
+            >
               Generate Report
               <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
             </button>
@@ -511,7 +568,92 @@ export function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {reportOpen && (
+        <div className="fixed inset-0 z-[80] bg-foreground/40 flex items-center justify-center animate-fade-in" onClick={() => setReportOpen(false)}>
+          <div className="w-[700px] max-h-[85vh] bg-card border border-border rounded-xl shadow-xl overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 bg-card border-b border-border p-4 flex items-center justify-between z-10">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-violet-500" />
+                <span className="font-bold text-foreground">AI Business Report</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {report && (
+                  <button
+                    onClick={async () => {
+                      const doc = await generateReportPDF(report);
+                      doc.save(`${business.replace(/\s+/g, "-")}-report.pdf`);
+                    }}
+                    className="h-8 px-3 rounded-md bg-primary text-primary-foreground text-xs font-semibold flex items-center gap-1.5"
+                  >
+                    Export PDF
+                  </button>
+                )}
+                <button onClick={() => setReportOpen(false)} className="text-muted-foreground hover:text-foreground">
+                  <AlertTriangle className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            <div className="p-6">
+              {reportLoading && !report && (
+                <div className="flex flex-col items-center gap-3 py-12">
+                  <div className="h-8 w-8 border-3 border-violet-500 border-t-transparent rounded-full animate-spin" />
+                  <p className="text-sm text-muted-foreground">AI is analyzing your business data...</p>
+                </div>
+              )}
+              {!reportLoading && !report && (
+                <div className="flex flex-col items-center gap-3 py-12 text-center">
+                  <Sparkles className="h-8 w-8 text-muted-foreground" />
+                  <p className="text-sm text-destructive font-medium">
+                    {reportError || "Failed to generate report. Check your API key in Settings."}
+                  </p>
+                </div>
+              )}
+              {report && (
+                <div className="space-y-6">
+                  <div>
+                    <h2 className="text-xl font-bold text-foreground">{report.title}</h2>
+                    <p className="text-sm text-muted-foreground mt-1">{report.generatedAt}</p>
+                  </div>
+                  {report.overallScore && (
+                    <div className="flex items-center gap-4">
+                      <div className={cn(
+                        "px-4 py-2 rounded-lg text-white font-bold text-lg",
+                        report.overallScore >= 75 ? "bg-green-500" : report.overallScore >= 50 ? "bg-amber-500" : "bg-red-500",
+                      )}>
+                        {report.overallScore}/100
+                      </div>
+                      <div>
+                        <div className="font-semibold text-foreground">Overall Health Score</div>
+                        <div className="text-sm text-muted-foreground">Risk Level: <span className="font-semibold">{(report.riskLevel || "medium").toUpperCase()}</span></div>
+                      </div>
+                    </div>
+                  )}
+                  <div className="bg-primary-soft border border-primary/20 rounded-lg p-4">
+                    <div className="text-xs uppercase font-bold text-primary mb-1">Executive Summary</div>
+                    <p className="text-sm text-foreground">{report.executiveSummary}</p>
+                  </div>
+                  {(report.sections || []).map((section: any, i: number) => (
+                    <div key={i}>
+                      <h3 className="font-bold text-foreground text-sm mb-2">{section.heading}</h3>
+                      <p className="text-sm text-muted-foreground">{section.content}</p>
+                      {section.highlights?.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {section.highlights.map((h: string, j: number) => (
+                            <span key={j} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 text-xs font-medium">
+                              • {h}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
