@@ -185,6 +185,7 @@ type AppCtx = {
     id: string,
     status: Order["status"],
   ) => Promise<{ configured: boolean; ok: boolean }>;
+  deleteOrder: (id: string) => void;
 
   // meetings
   meetings: Meeting[];
@@ -200,6 +201,7 @@ type AppCtx = {
     id: string,
     status: Meeting["status"],
   ) => Promise<{ configured: boolean; ok: boolean }>;
+  deleteMeeting: (id: string) => void;
   setMeetings: (m: Meeting[]) => void;
 
   // notifications
@@ -502,6 +504,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return meeting;
   };
 
+  const deleteOrder = (id: string) => {
+    setOrders((prev) => prev.filter((o) => o.id !== id));
+  };
+
+  const deleteMeeting = (id: string) => {
+    setMeetings((prev) => prev.filter((m) => m.id !== id));
+  };
+
   const persistThread = (thread: ChatThread) => {
     void upsertPersistedChat(thread).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
@@ -787,9 +797,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       orders,
       createOrder,
       updateOrderStatus,
+      deleteOrder,
       meetings,
       createMeeting,
       updateMeetingStatus,
+      deleteMeeting,
       setMeetings,
       notifications,
       addNotification,
@@ -812,8 +824,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       settings,
       createOrder,
       updateOrderStatus,
+      deleteOrder,
       createMeeting,
       updateMeetingStatus,
+      deleteMeeting,
       customers,
       products,
       isTyping,
