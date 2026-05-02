@@ -1,11 +1,15 @@
 import { useState } from "react";
 import { mockCustomers, type Customer } from "@/data/mockCustomers";
 import { Badge } from "@/components/shared/Badge";
-import { Search, X } from "lucide-react";
+import { Search, X, Sparkles } from "lucide-react";
+import { useAI } from "@/hooks/useAI";
+import { Customer360Modal } from "@/components/customers/Customer360Modal";
 
 export function CustomersPage() {
   const [q, setQ] = useState("");
   const [active, setActive] = useState<Customer | null>(null);
+  const [ai360, setAi360] = useState<Customer | null>(null);
+  const { getCustomer360 } = useAI();
   const list = mockCustomers.filter((c) => c.name.toLowerCase().includes(q.toLowerCase()));
 
   return (
@@ -65,12 +69,21 @@ export function CustomersPage() {
                     </Badge>
                   </td>
                   <td className="p-3 text-right">
-                    <button
-                      onClick={() => setActive(c)}
-                      className="text-xs text-primary font-medium hover:underline"
-                    >
-                      View
-                    </button>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={() => setAi360(c)}
+                        className="inline-flex items-center gap-1 text-xs text-violet-600 dark:text-violet-400 font-semibold hover:underline"
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        AI 360
+                      </button>
+                      <button
+                        onClick={() => setActive(c)}
+                        className="text-xs text-primary font-medium hover:underline"
+                      >
+                        View
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -167,6 +180,27 @@ export function CustomersPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {ai360 && (
+        <Customer360Modal
+          customer={ai360}
+          onClose={() => setAi360(null)}
+          onGenerate={async (c) => {
+            const result = await getCustomer360({
+              name: c.name,
+              phone: c.phone,
+              totalOrders: c.totalOrders,
+              totalSpent: c.totalSpent,
+              preferredProducts: c.preferredProducts,
+              behaviorSummary: c.behaviorSummary,
+              orderHistory: c.orderHistory.map((o) => ({ id: o.id, items: o.items, amount: o.amount })),
+              status: c.status,
+              loyalSince: c.loyalSince,
+            });
+            return result;
+          }}
+        />
       )}
     </div>
   );

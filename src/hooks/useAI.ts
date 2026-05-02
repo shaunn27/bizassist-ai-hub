@@ -16,6 +16,11 @@ import {
 } from "@/server/ai.functions";
 import { generateBusinessReport } from "@/server/report.functions";
 import { generateInvoice } from "@/server/invoice.functions";
+import { chatCopilot } from "@/server/copilot.functions";
+import { parseWhatsAppChat } from "@/server/chatParser.functions";
+import { generateForecast } from "@/server/forecast.functions";
+import { generateCompetitorIntel } from "@/server/intelligence.functions";
+import { generateCustomer360 } from "@/server/customer360.functions";
 
 const DEFAULT_MODEL = "deepseek-v4-flash";
 
@@ -264,6 +269,72 @@ export function useAI() {
     [resolveApiKey, resolveModel],
   );
 
+  const chatCopilotFn = useCallback(
+    async (question: string, history: { role: "user" | "assistant"; content: string }[]): Promise<{ reply: string; chartData: any } | null> => {
+      setLoading(true); setError(null);
+      try {
+        return await chatCopilot({ data: { apiKey: resolveApiKey(), model: resolveModel(), question, businessName: "BizAssist", history } });
+      } catch (e: unknown) { const err = e instanceof Error ? e : new Error(String(e)); setError(err.message); return null; }
+      finally { setLoading(false); }
+    },
+    [resolveApiKey, resolveModel],
+  );
+
+  const parseWhatsApp = useCallback(
+    async (rawText: string): Promise<any | null> => {
+      setLoading(true); setError(null);
+      try {
+        return await parseWhatsAppChat({ data: { apiKey: resolveApiKey(), model: resolveModel(), rawText } });
+      } catch (e: unknown) { const err = e instanceof Error ? e : new Error(String(e)); setError(err.message); return null; }
+      finally { setLoading(false); }
+    },
+    [resolveApiKey, resolveModel],
+  );
+
+  const getForecast = useCallback(
+    async (forecastDays: number): Promise<any | null> => {
+      setLoading(true); setError(null);
+      try {
+        const now = new Date();
+        const historicalOrders = [];
+        for (let i = 13; i >= 0; i--) {
+          const d = new Date(now);
+          d.setDate(d.getDate() - i);
+          historicalOrders.push({
+            date: d.toISOString().slice(0, 10),
+            total: Math.round(300 + Math.random() * 700),
+            orderCount: Math.round(3 + Math.random() * 8),
+          });
+        }
+        return await generateForecast({ data: { apiKey: resolveApiKey(), model: resolveModel(), historicalOrders, forecastDays, businessName: "BizAssist" } });
+      } catch (e: unknown) { const err = e instanceof Error ? e : new Error(String(e)); setError(err.message); return null; }
+      finally { setLoading(false); }
+    },
+    [resolveApiKey, resolveModel],
+  );
+
+  const getCompetitorIntel = useCallback(
+    async (competitorInfo: string): Promise<any | null> => {
+      setLoading(true); setError(null);
+      try {
+        return await generateCompetitorIntel({ data: { apiKey: resolveApiKey(), model: resolveModel(), competitorInfo, ownBusiness: { name: "BizAssist", products: ["Widget A", "Widget B"], totalOrders: 150, totalRevenue: 25000, customerCount: 80 } } });
+      } catch (e: unknown) { const err = e instanceof Error ? e : new Error(String(e)); setError(err.message); return null; }
+      finally { setLoading(false); }
+    },
+    [resolveApiKey, resolveModel],
+  );
+
+  const getCustomer360 = useCallback(
+    async (customerData: any): Promise<any | null> => {
+      setLoading(true); setError(null);
+      try {
+        return await generateCustomer360({ data: { apiKey: resolveApiKey(), model: resolveModel(), customerData } });
+      } catch (e: unknown) { const err = e instanceof Error ? e : new Error(String(e)); setError(err.message); return null; }
+      finally { setLoading(false); }
+    },
+    [resolveApiKey, resolveModel],
+  );
+
   return {
     analyze,
     chatWithAI,
@@ -278,6 +349,11 @@ export function useAI() {
     getDailyBriefing,
     getBusinessReport,
     getInvoice,
+    chatCopilot: chatCopilotFn,
+    parseWhatsApp,
+    getForecast,
+    getCompetitorIntel,
+    getCustomer360,
     loading,
     error,
   };

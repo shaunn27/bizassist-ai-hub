@@ -212,6 +212,42 @@
   animation: fade-in 0.25s ease-out;
 }
 
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px var(--glow-color, rgba(14,165,233,0.3)); }
+  50% { box-shadow: 0 0 40px var(--glow-color, rgba(14,165,233,0.3)); }
+}
+
+@keyframes bar-fill {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.animate-bar-fill {
+  animation: bar-fill 0.5s ease-out both;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s infinite;
+}
+
+@keyframes typing-dot {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-6px); }
+}
+
+.typing-dot-1 { animation: typing-dot 1.4s infinite; }
+.typing-dot-2 { animation: typing-dot 1.4s infinite 0.2s; }
+.typing-dot-3 { animation: typing-dot 1.4s infinite 0.4s; }
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 3s linear infinite;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;

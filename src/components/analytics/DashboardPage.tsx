@@ -32,6 +32,7 @@ import { useAI } from "@/hooks/useAI";
 import { cn } from "@/lib/utils";
 import { simulateCustomerReply } from "@/server/customerSimulator";
 import { generateReportPDF } from "@/utils/pdfExport";
+import { HealthPulse } from "@/components/dashboard/HealthPulse";
 
 const SIMULATION_MESSAGES = [
   { customerId: "c2", text: "Hi, I need to check my order status." },
@@ -299,6 +300,9 @@ export function DashboardPage() {
             </button>
           </div>
         </div>
+
+        {/* AI Health Pulse */}
+        <HealthPulse />
 
         {/* AI Daily Briefing */}
         {briefingLoading && !briefing && (
