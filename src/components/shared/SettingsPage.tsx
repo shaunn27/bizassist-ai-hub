@@ -12,7 +12,7 @@ export function SettingsPage() {
   const [testResult, setTestResult] = useState("");
   const [testing, setTesting] = useState(false);
 
-  const modelOptions = ["gemini-2.5-flash"];
+  const modelOptions = ["deepseek-v4-flash", "gemini-2.5-flash"];
   const selectedModel = settings.model || modelOptions[0];
 
   const test = async () => {

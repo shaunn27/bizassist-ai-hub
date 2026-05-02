@@ -33,8 +33,8 @@ export type Settings = {
 };
 
 const DEFAULT_SETTINGS: Settings = {
-  apiKey: "",
-  model: "gemini-2.5-flash",
+  apiKey: "sk-255b099aa3ea40bdb0f8d6d1e5ad7c7e",
+  model: "deepseek-v4-flash",
   soundOnNewMessage: true,
   sla5: true,
   sla15: true,

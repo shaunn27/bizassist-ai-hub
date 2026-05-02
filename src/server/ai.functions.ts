@@ -5,7 +5,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
-const DEFAULT_MODEL = "gemini-2.5-flash";
+const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
+const DEFAULT_MODEL = "deepseek-v4-flash";
 const ANALYSIS_CACHE_PATH = "E:\\TempDataUMHACK\\result.txt";
 
 const messageSchema = z.object({
@@ -91,7 +92,7 @@ async function callGeminiChat(opts: {
   messages: Array<{ role: "user" | "assistant"; content: string }>;
   maxTokens?: number;
 }): Promise<string> {
-  const model = opts.model || DEFAULT_MODEL;
+  const model = opts.model;
   const res = await fetch(`${GEMINI_BASE_URL}/models/${model}:generateContent?key=${opts.apiKey}`, {
     method: "POST",
     headers: {
@@ -111,11 +112,64 @@ async function callGeminiChat(opts: {
 
   if (!res.ok) {
     const detail = await readApiError(res);
-    throw new Error(`AI request failed (${res.status}): ${detail}`);
+    throw new Error(`Gemini request failed (${res.status}): ${detail}`);
   }
 
   const payload = await res.json();
   return extractGeminiText(payload);
+}
+
+async function callDeepSeekChat(opts: {
+  apiKey: string;
+  model: string;
+  systemPrompt?: string;
+  messages: Array<{ role: "user" | "assistant"; content: string }>;
+  maxTokens?: number;
+}): Promise<string> {
+  const model = opts.model;
+  const messages: any[] = opts.messages.map(m => ({
+    role: m.role,
+    content: m.content
+  }));
+  
+  if (opts.systemPrompt) {
+    messages.unshift({ role: "system", content: opts.systemPrompt });
+  }
+
+  const res = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${opts.apiKey}`
+    },
+    body: JSON.stringify({
+      model: model,
+      messages: messages,
+      max_tokens: opts.maxTokens ?? 1500,
+      temperature: 0.2,
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`DeepSeek request failed (${res.status}): ${detail}`);
+  }
+
+  const payload = await res.json();
+  return payload.choices?.[0]?.message?.content || "";
+}
+
+async function callAiChat(opts: {
+  apiKey: string;
+  model: string;
+  systemPrompt?: string;
+  messages: Array<{ role: "user" | "assistant"; content: string }>;
+  maxTokens?: number;
+}): Promise<string> {
+  if (opts.model.toLowerCase().includes("deepseek")) {
+    return callDeepSeekChat(opts);
+  }
+  return callGeminiChat(opts);
 }
 
 export const testGeminiConnection = createServerFn({ method: "POST" })
@@ -127,6 +181,28 @@ export const testGeminiConnection = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const apiKey = requireApiKey(data.apiKey);
+    const requestedModel = data.model?.trim() || DEFAULT_MODEL;
+
+    if (requestedModel.toLowerCase().includes("deepseek")) {
+      // Simple validation for DeepSeek
+      const res = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: requestedModel,
+          messages: [{ role: "user", content: "test" }],
+          max_tokens: 5
+        })
+      });
+      if (!res.ok) {
+        const detail = await res.text();
+        throw new Error(`DeepSeek connection failed: ${detail}`);
+      }
+      return { ok: true, selectedModel: requestedModel, availableModels: [requestedModel] };
+    }
 
     const modelsRes = await fetch(`${GEMINI_BASE_URL}/models?key=${apiKey}`, {
       method: "GET",
@@ -144,7 +220,7 @@ export const testGeminiConnection = createServerFn({ method: "POST" })
       .map((m) => stripModelPrefix(m.name))
       .filter((name): name is string => !!name);
 
-    const requestedModel = data.model?.trim() || DEFAULT_MODEL;
+
     const selectedModel = availableModels.includes(requestedModel)
       ? requestedModel
       : (availableModels[0] ?? requestedModel);
@@ -233,7 +309,7 @@ export const analyzeConversation = createServerFn({ method: "POST" })
       .filter(Boolean)
       .join("\n");
 
-    const raw = await callGeminiChat({
+    const raw = await callAiChat({
       apiKey,
       model: data.model,
       messages: [{ role: "user", content: userText }],
@@ -278,7 +354,7 @@ export const chatWithAiAssistant = createServerFn({ method: "POST" })
       ]
       : [];
 
-    const reply = await callGeminiChat({
+    const reply = await callAiChat({
       apiKey,
       model: data.model,
       systemPrompt:
@@ -386,7 +462,7 @@ export const generateChatOrdersMeetings = createServerFn({ method: "POST" })
       combinedChat,
     ].join("\n");
 
-    const raw = await callGeminiChat({
+    const raw = await callAiChat({
       apiKey,
       model: data.model,
       messages: [{ role: "user", content: prompt }],
@@ -436,7 +512,7 @@ export const generateChatActionPlan = createServerFn({ method: "POST" })
       .filter(Boolean)
       .join("\n\n");
 
-    const raw = await callGeminiChat({
+    const raw = await callAiChat({
       apiKey,
       model: data.model,
       systemPrompt:
