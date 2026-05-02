@@ -5,6 +5,7 @@ import { mockMeetings, type Meeting } from "@/data/mockMeetings";
 import { listPersistedChats, upsertPersistedChat } from "@/server/chat.functions";
 import { listLocalChatHistories } from "@/server/chatFiles.functions";
 import { listLocalOrders, saveLocalOrder } from "@/server/orderFiles.functions";
+import { listLocalMeetings, saveLocalMeeting } from "@/server/meetingFiles.functions";
 import {
   avatarColorFromSeed,
   makeCustomerId,
@@ -307,7 +308,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     };
 
+    const loadMeetings = async () => {
+      try {
+        const result = await listLocalMeetings();
+        if (cancelled) return;
+        
+        if (result.ok && result.meetings.length > 0) {
+          setMeetings(prev => {
+            const map = new Map(prev.map(m => [m.id, m]));
+            for (const meeting of result.meetings) {
+              map.set(meeting.id, meeting);
+            }
+            return Array.from(map.values()).sort((a, b) => a.id.localeCompare(b.id));
+          });
+        }
+      } catch (err: unknown) {
+        console.debug("Failed to load local meetings:", err);
+      }
+    };
+
     void loadOrders();
+    void loadMeetings();
 
     return () => {
       cancelled = true;
@@ -379,6 +400,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
 
     setMeetings((prev) => [meeting, ...prev]);
+
+    void saveLocalMeeting({ data: meeting }).catch((err: unknown) => {
+      console.error("Failed to save local meeting:", err);
+    });
+
     return meeting;
   };
 

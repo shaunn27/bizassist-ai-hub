@@ -2,14 +2,20 @@ import { useState } from "react";
 import { useApp } from "@/lib/appContext";
 import { mockCustomers } from "@/data/mockCustomers";
 import { Badge } from "@/components/shared/Badge";
-import { toast } from "@/components/shared/Toast";
-import { ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
+import { Modal, toast } from "@/components/shared/Toast";
+import { ChevronLeft, ChevronRight, AlertTriangle, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function MeetingsPage() {
-  const { meetings, orders } = useApp();
+  const { meetings, orders, createMeeting } = useApp();
   const [cursor, setCursor] = useState(new Date());
   const [selected, setSelected] = useState(new Date().toISOString().split("T")[0]);
+
+  const [addOpen, setAddOpen] = useState(false);
+  const [customerName, setCustomerName] = useState("");
+  const [time, setTime] = useState("10:00 AM");
+  const [duration, setDuration] = useState("30 min");
+  const [purpose, setPurpose] = useState("");
 
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
@@ -29,6 +35,26 @@ export function MeetingsPage() {
     } else {
       toast(`⚠ Conflict: ${sameDay.length} other meeting(s) on this day`, "error");
     }
+  };
+
+  const handleAddMeeting = () => {
+    if (!customerName.trim()) {
+      toast("Customer name is required.", "error");
+      return;
+    }
+    const now = Date.now();
+    createMeeting({
+      customerId: `manual-${now}`,
+      customerName: customerName.trim(),
+      date: selected,
+      time,
+      duration,
+      purpose,
+    });
+    setAddOpen(false);
+    setCustomerName("");
+    setPurpose("");
+    toast("Meeting created", "success");
   };
 
   return (
@@ -96,7 +122,15 @@ export function MeetingsPage() {
         </div>
 
         <div>
-          <h3 className="font-semibold text-foreground mb-3">Meetings on {selected}</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-foreground">Meetings on {selected}</h3>
+            <button
+              onClick={() => setAddOpen(true)}
+              className="h-8 px-3 rounded-md bg-foreground text-background text-xs flex items-center gap-1.5"
+            >
+              <Plus className="h-3.5 w-3.5" /> Add Meeting
+            </button>
+          </div>
           <div className="space-y-3">
             {dayMeetings.length === 0 && (
               <div className="text-sm text-muted-foreground p-6 text-center bg-card border border-border rounded-xl">
@@ -153,6 +187,67 @@ export function MeetingsPage() {
           </div>
         </div>
       </div>
+
+      <Modal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        title={`Add Meeting for ${selected}`}
+        footer={
+          <>
+            <button
+              onClick={() => setAddOpen(false)}
+              className="h-9 px-3 rounded-md border border-border text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleAddMeeting}
+              className="h-9 px-3 rounded-md bg-primary text-primary-foreground text-sm"
+            >
+              Create Meeting
+            </button>
+          </>
+        }
+      >
+        <div className="grid grid-cols-2 gap-3">
+          <label className="text-xs text-muted-foreground col-span-2">
+            Customer name
+            <input
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              placeholder="e.g. John Doe"
+              className="mt-1 h-9 w-full px-3 rounded-md border border-border bg-background text-sm text-foreground"
+            />
+          </label>
+          <label className="text-xs text-muted-foreground">
+            Time
+            <input
+              value={time}
+              onChange={(e) => setTime(e.target.value)}
+              placeholder="e.g. 10:00 AM"
+              className="mt-1 h-9 w-full px-3 rounded-md border border-border bg-background text-sm text-foreground"
+            />
+          </label>
+          <label className="text-xs text-muted-foreground">
+            Duration
+            <input
+              value={duration}
+              onChange={(e) => setDuration(e.target.value)}
+              placeholder="e.g. 30 min"
+              className="mt-1 h-9 w-full px-3 rounded-md border border-border bg-background text-sm text-foreground"
+            />
+          </label>
+          <label className="text-xs text-muted-foreground col-span-2">
+            Purpose
+            <input
+              value={purpose}
+              onChange={(e) => setPurpose(e.target.value)}
+              placeholder="e.g. Discuss new product"
+              className="mt-1 h-9 w-full px-3 rounded-md border border-border bg-background text-sm text-foreground"
+            />
+          </label>
+        </div>
+      </Modal>
     </div>
   );
 }
