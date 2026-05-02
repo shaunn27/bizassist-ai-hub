@@ -306,7 +306,7 @@ export const generateChatOrdersMeetings = createServerFn({ method: "POST" })
     const apiKey = requireApiKey(data.apiKey);
     const CHAT_HISTORY_DIR = "E:\\bizassist-data";
     const CHAT_ANALYSIS_DIR = "E:\\bizassist-data-responce";
-    const ACTION_OUTPUT_DIR = "E:\\bizzasist-data-action";
+    const ACTION_OUTPUT_DIR = "E:\\bizassist-data-action";
 
     function sanitize(name: string): string {
       return name.trim().replace(/[<>:"/\\|?*]+/g, "-").replace(/\s+/g, " ").slice(0, 120) || "chat";

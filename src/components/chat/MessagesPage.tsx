@@ -1019,7 +1019,7 @@ function ActionsTab({
           className="h-8 px-3 rounded-md bg-secondary text-secondary-foreground text-xs font-semibold hover:bg-secondary/80 disabled:opacity-50 flex items-center gap-2"
         >
           {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-          Regenerate
+          Generate
         </button>
       </div>
 

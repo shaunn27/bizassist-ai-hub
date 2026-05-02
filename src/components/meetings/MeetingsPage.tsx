@@ -3,11 +3,12 @@ import { useApp } from "@/lib/appContext";
 import { mockCustomers } from "@/data/mockCustomers";
 import { Badge } from "@/components/shared/Badge";
 import { Modal, toast } from "@/components/shared/Toast";
-import { ChevronLeft, ChevronRight, AlertTriangle, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, AlertTriangle, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { cancelLocalMeeting } from "@/server/cancelItem.functions";
 
 export function MeetingsPage() {
-  const { meetings, orders, createMeeting } = useApp();
+  const { meetings, orders, createMeeting, deleteMeeting } = useApp();
   const [cursor, setCursor] = useState(new Date());
   const [selected, setSelected] = useState(new Date().toISOString().split("T")[0]);
 
@@ -179,6 +180,21 @@ export function MeetingsPage() {
                       className="h-8 px-3 rounded-md bg-primary text-primary-foreground text-xs font-semibold"
                     >
                       Confirm
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!confirm(`Cancel meeting for ${m.customerName}? This cannot be undone.`)) return;
+                        const res = await cancelLocalMeeting({ data: { customerName: m.customerName, meetingId: m.id } });
+                        if (res.ok) {
+                          deleteMeeting(m.id);
+                          toast("Meeting cancelled.", "success");
+                        } else {
+                          toast(res.error || "Failed to cancel meeting.", "error");
+                        }
+                      }}
+                      className="h-8 px-2 rounded-md border border-red-400 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 text-xs flex items-center justify-center"
+                    >
+                      <Trash2 className="h-3 w-3" />
                     </button>
                   </div>
                 </div>

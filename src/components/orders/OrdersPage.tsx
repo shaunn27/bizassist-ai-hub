@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd";
-import { Download, FileText, X, Database, FileCheck2, Plus } from "lucide-react";
+import { Download, FileText, X, Database, FileCheck2, Plus, Trash2 } from "lucide-react";
 import { useApp } from "@/lib/appContext";
 import { Badge } from "@/components/shared/Badge";
 import { Modal, toast } from "@/components/shared/Toast";
 import type { Order } from "@/data/mockOrders";
 import { mockProducts } from "@/data/mockProducts";
 import { cn } from "@/lib/utils";
+import { cancelLocalOrder } from "@/server/cancelItem.functions";
 
 const COLS: { key: Order["status"]; color: string; label: string }[] = [
   { key: "Pending", color: "bg-warning", label: "Pending" },
@@ -16,7 +17,7 @@ const COLS: { key: Order["status"]; color: string; label: string }[] = [
 ];
 
 export function OrdersPage() {
-  const { orders, updateOrderStatus, createOrder } = useApp();
+  const { orders, updateOrderStatus, createOrder, deleteOrder } = useApp();
   const [active, setActive] = useState<Order | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [orderId, setOrderId] = useState("");
@@ -316,6 +317,22 @@ export function OrdersPage() {
                 className="w-full h-9 rounded-md border border-border text-sm flex items-center justify-center gap-1.5"
               >
                 <FileCheck2 className="h-3.5 w-3.5" /> Generate Quotation
+              </button>
+              <button
+                onClick={async () => {
+                  if (!confirm(`Cancel order ${active.id} for ${active.customerName}? This cannot be undone.`)) return;
+                  const res = await cancelLocalOrder({ data: { customerName: active.customerName, orderId: active.id } });
+                  if (res.ok) {
+                    deleteOrder(active.id);
+                    setActive(null);
+                    toast(`Order ${active.id} cancelled and removed.`, "success");
+                  } else {
+                    toast(res.error || "Failed to cancel order.", "error");
+                  }
+                }}
+                className="w-full h-9 rounded-md border border-red-400 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 text-sm flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Cancel Order
               </button>
             </div>
           </div>

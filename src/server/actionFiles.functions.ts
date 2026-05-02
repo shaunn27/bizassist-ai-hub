@@ -4,13 +4,13 @@ import path from "node:path";
 import type { Order } from "@/data/mockOrders";
 import type { Meeting } from "@/data/mockMeetings";
 
-const ACTION_DIR = "E:\\bizzasist-data-action";
+const ACTION_DIR = "E:\\bizassist-data-action";
 
 export const readActionFile = createServerFn({ method: "GET" })
   .inputValidator((customerName: any) => customerName as string)
   .handler(async ({ data: customerName }: { data: string }): Promise<{ ok: boolean; orders: Order[]; meetings: Meeting[]; error?: string }> => {
     try {
-      const safeName = customerName.replace(/[^a-zA-Z0-9_-]/g, "_") || "Unknown";
+      const safeName = customerName.trim().replace(/[<>:"/\\|?*]+/g, "-").replace(/\s+/g, " ").slice(0, 120) || "Unknown";
       const filePath = path.join(ACTION_DIR, `${safeName}.txt`);
       
       let content = "";
@@ -135,25 +135,16 @@ export const setActionItemStatus = createServerFn({ method: "POST" })
   .inputValidator((d: any) => d as { customerName: string; itemId: string; status: "approved" | "rejected" })
   .handler(async ({ data }: { data: { customerName: string; itemId: string; status: "approved" | "rejected" } }): Promise<{ ok: boolean; error?: string }> => {
     try {
-      // The action files are stored with customer name as-is (not sanitized) by the AI generator
-      // Try both the raw name and the sanitized version
-      const rawName = data.customerName.trim();
-      const safeName = rawName.replace(/[^a-zA-Z0-9_-]/g, "_");
+      const safeName = data.customerName.trim().replace(/[<>:"/\\|?*]+/g, "-").replace(/\s+/g, " ").slice(0, 120) || "Unknown";
 
-      let filePath = path.join(ACTION_DIR, `${rawName}.txt`);
+      let filePath = path.join(ACTION_DIR, `${safeName}.txt`);
       let content = "";
 
-      // Try raw name first, fall back to sanitized
       try {
         content = await fs.readFile(filePath, "utf-8");
-      } catch {
-        filePath = path.join(ACTION_DIR, `${safeName}.txt`);
-        try {
-          content = await fs.readFile(filePath, "utf-8");
-        } catch (e: any) {
-          if (e.code === "ENOENT") return { ok: true }; // Nothing to update
-          throw e;
-        }
+      } catch (e: any) {
+        if (e.code === "ENOENT") return { ok: true }; // Nothing to update
+        throw e;
       }
 
       // Split file into segments by block headers

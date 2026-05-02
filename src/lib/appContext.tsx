@@ -73,6 +73,7 @@ type AppCtx = {
     chatExcerpt?: string;
   }) => Order;
   updateOrderStatus: (id: string, status: Order["status"]) => void;
+  deleteOrder: (id: string) => void;
 
   // meetings
   meetings: Meeting[];
@@ -84,6 +85,7 @@ type AppCtx = {
     duration: string;
     purpose: string;
   }) => Meeting;
+  deleteMeeting: (id: string) => void;
   setMeetings: (m: Meeting[]) => void;
 
   // notifications
@@ -471,6 +473,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status } : o)));
   };
 
+  const deleteOrder = (id: string) => {
+    setOrders((prev) => prev.filter((o) => o.id !== id));
+  };
+
+  const deleteMeeting = (id: string) => {
+    setMeetings((prev) => prev.filter((m) => m.id !== id));
+  };
+
   const addNotification = (n: Omit<Notification, "id" | "time" | "read">) => {
     const time = new Date().toLocaleTimeString("en-US", {
       hour: "2-digit",
@@ -501,8 +511,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       orders,
       createOrder,
       updateOrderStatus,
+      deleteOrder,
       meetings,
       createMeeting,
+      deleteMeeting,
       setMeetings,
       notifications,
       addNotification,
