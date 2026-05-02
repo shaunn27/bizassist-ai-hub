@@ -11,6 +11,7 @@ import {
 const chatMessageSchema = z.object({
   id: z.string(),
   from: z.enum(["customer", "agent"]),
+  side: z.enum(["left", "right"]).optional(),
   type: z.enum(["text", "image", "voice"]),
   text: z.string().optional(),
   filename: z.string().optional(),

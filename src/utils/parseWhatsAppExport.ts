@@ -147,9 +147,11 @@ export function parseWhatsAppExport(text: string, options: ParseOptions = {}): P
 
   const messages: ChatMessage[] = parsed.map((p, idx) => {
     const from = agentNames.has(normalizeName(p.sender)) ? "agent" : "customer";
+    const side = from === "agent" ? "right" : "left";
     return {
       id: `wa-${p.date.getTime()}-${idx}`,
       from,
+      side,
       type: "text",
       text: p.body,
       time: formatDisplayTime(p.date),
@@ -169,8 +171,8 @@ export function makeCustomerId(name: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "")
-    .slice(0, 24);
-  return `wa-${slug || "customer"}-${Date.now().toString(36)}`;
+    .slice(0, 32);
+  return `wa-${slug || "customer"}`;
 }
 
 export function makeInitials(name: string): string {

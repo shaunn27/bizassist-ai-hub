@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd";
-import { Download, FileText, X, Database, FileCheck2, Link2 } from "lucide-react";
+import { Download, FileText, X, Database, FileCheck2, Plus } from "lucide-react";
 import { useApp } from "@/lib/appContext";
 import { Badge } from "@/components/shared/Badge";
-import { toast } from "@/components/shared/Toast";
+import { Modal, toast } from "@/components/shared/Toast";
 import type { Order } from "@/data/mockOrders";
+import { mockProducts } from "@/data/mockProducts";
 import { cn } from "@/lib/utils";
 
 const COLS: { key: Order["status"]; color: string; label: string }[] = [
@@ -15,9 +16,18 @@ const COLS: { key: Order["status"]; color: string; label: string }[] = [
 ];
 
 export function OrdersPage() {
-  const { orders, updateOrderStatus } = useApp();
+  const { orders, updateOrderStatus, createOrder } = useApp();
   const [active, setActive] = useState<Order | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [orderId, setOrderId] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [selectedProductId, setSelectedProductId] = useState("");
+  const [itemQty, setItemQty] = useState("1");
+  const [totalPrice, setTotalPrice] = useState("0");
+  const [totalEdited, setTotalEdited] = useState(false);
   const totalToday = orders.reduce((s, o) => s + (o.status !== "Delivered" ? o.total : 0), 0);
+
+  const selectedProduct = mockProducts.find((p) => p.id === selectedProductId);
 
   const onDragEnd = (r: DropResult) => {
     if (!r.destination) return;
@@ -44,6 +54,65 @@ export function OrdersPage() {
     toast("CSV exported", "success");
   };
 
+  const openAddOrder = () => {
+    setOrderId("");
+    setCustomerName("");
+    setSelectedProductId("");
+    setItemQty("1");
+    setTotalPrice("0");
+    setTotalEdited(false);
+    setAddOpen(true);
+  };
+
+  const updateDerivedTotal = (nextQty: string, nextPrice: number) => {
+    if (totalEdited) return;
+    const qtyNum = Number(nextQty);
+    if (!Number.isFinite(qtyNum) || !Number.isFinite(nextPrice)) return;
+    setTotalPrice(String(Math.max(0, qtyNum * nextPrice)));
+  };
+
+  const handleAddOrder = () => {
+    const qty = Number(itemQty);
+    const total = Number(totalPrice);
+    if (!customerName.trim()) {
+      toast("Customer name is required.", "error");
+      return;
+    }
+    if (!selectedProduct) {
+      toast("Please select an item from the catalog.", "error");
+      return;
+    }
+    if (!Number.isFinite(qty) || qty <= 0) {
+      toast("Item quantity must be greater than 0.", "error");
+      return;
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      toast("Price per item must be 0 or greater.", "error");
+      return;
+    }
+    if (!Number.isFinite(total) || total < 0) {
+      toast("Total price must be 0 or greater.", "error");
+      return;
+    }
+    const trimmedOrderId = orderId.trim();
+    if (trimmedOrderId && orders.some((o) => o.id === trimmedOrderId)) {
+      toast("Order ID already exists.", "error");
+      return;
+    }
+
+    const now = Date.now();
+    const order = createOrder({
+      orderId: trimmedOrderId || undefined,
+      customerId: `manual-${now}`,
+      customerName: customerName.trim(),
+      items: `${qty}x ${selectedProduct.name}`,
+      total,
+      chatExcerpt: "Manually added from Orders page.",
+    });
+    setAddOpen(false);
+    toast(`Order created: ${order.id}`, "success");
+  };
+
   return (
     <div className="h-full flex flex-col">
       <div className="px-6 py-4 border-b border-border bg-card flex items-center gap-3">
@@ -59,6 +128,12 @@ export function OrdersPage() {
           className="h-9 px-3 rounded-md border border-border bg-background text-sm w-56"
         />
         <div className="ml-auto flex items-center gap-3">
+          <button
+            onClick={openAddOrder}
+            className="h-9 px-3 rounded-md bg-foreground text-background text-sm flex items-center gap-1.5"
+          >
+            <Plus className="h-3.5 w-3.5" /> Add Order
+          </button>
           <div className="text-right">
             <div className="text-[10px] uppercase text-muted-foreground">Open revenue</div>
             <div className="text-lg font-bold text-foreground">RM{totalToday.toLocaleString()}</div>
@@ -246,6 +321,109 @@ export function OrdersPage() {
           </div>
         </div>
       )}
+
+      <Modal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        title="Add Order"
+        footer={
+          <>
+            <button
+              onClick={() => setAddOpen(false)}
+              className="h-9 px-3 rounded-md border border-border text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleAddOrder}
+              className="h-9 px-3 rounded-md bg-primary text-primary-foreground text-sm"
+            >
+              Create Order
+            </button>
+          </>
+        }
+      >
+        <div className="grid grid-cols-2 gap-3">
+          <label className="text-xs text-muted-foreground col-span-2">
+            Order ID
+            <input
+              value={orderId}
+              onChange={(e) => setOrderId(e.target.value)}
+              placeholder="ORD-0030"
+              className="mt-1 h-9 w-full px-3 rounded-md border border-border bg-background text-sm text-foreground"
+            />
+          </label>
+          <label className="text-xs text-muted-foreground col-span-2">
+            Customer name
+            <input
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              placeholder="Customer name"
+              className="mt-1 h-9 w-full px-3 rounded-md border border-border bg-background text-sm text-foreground"
+            />
+          </label>
+          <label className="text-xs text-muted-foreground col-span-2">
+            Item (catalog)
+            <select
+              value={selectedProductId}
+              onChange={(e) => {
+                const nextId = e.target.value;
+                setSelectedProductId(nextId);
+                const nextProduct = mockProducts.find((p) => p.id === nextId);
+                if (nextProduct) updateDerivedTotal(itemQty, nextProduct.price);
+              }}
+              className="mt-1 h-9 w-full px-3 rounded-md border border-border bg-background text-sm text-foreground"
+            >
+              <option value="">Select a catalog item</option>
+              {mockProducts.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} ({p.sku}) — RM{p.price}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs text-muted-foreground">
+            Item quantity
+            <input
+              type="number"
+              min={1}
+              step={1}
+              value={itemQty}
+              onChange={(e) => {
+                const next = e.target.value;
+                setItemQty(next);
+                updateDerivedTotal(next, selectedProduct?.price ?? 0);
+              }}
+              className="mt-1 h-9 w-full px-3 rounded-md border border-border bg-background text-sm text-foreground"
+            />
+          </label>
+          <label className="text-xs text-muted-foreground">
+            Price per item
+            <input
+              type="number"
+              min={0}
+              step={0.01}
+              value={selectedProduct?.price ?? 0}
+              readOnly
+              className="mt-1 h-9 w-full px-3 rounded-md border border-border bg-muted/40 text-sm text-foreground"
+            />
+          </label>
+          <label className="text-xs text-muted-foreground col-span-2">
+            Total price (all items)
+            <input
+              type="number"
+              min={0}
+              step={0.01}
+              value={totalPrice}
+              onChange={(e) => {
+                setTotalPrice(e.target.value);
+                setTotalEdited(true);
+              }}
+              className="mt-1 h-9 w-full px-3 rounded-md border border-border bg-background text-sm text-foreground"
+            />
+          </label>
+        </div>
+      </Modal>
     </div>
   );
 }

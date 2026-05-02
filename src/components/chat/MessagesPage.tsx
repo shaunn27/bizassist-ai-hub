@@ -22,7 +22,6 @@ import { mockMeetings } from "@/data/mockMeetings";
 import { formatChatForAI, buildContextBlock } from "@/utils/formatChat";
 import type { ChatActionPlan, ActionProposal } from "@/utils/chatActions";
 import { parseWhatsAppExport } from "@/utils/parseWhatsAppExport";
-import { SLATimer } from "@/components/shared/SLATimer";
 import { Badge } from "@/components/shared/Badge";
 import { Modal, toast } from "@/components/shared/Toast";
 import { cn } from "@/lib/utils";
@@ -31,6 +30,7 @@ import {
   persistConfirmedOrder,
   persistConfirmedMeeting,
 } from "@/server/action.functions";
+import { saveLocalChatHistory } from "@/server/chatFiles.functions";
 
 type AIChatMsg = { role: "user" | "assistant"; content: string };
 
@@ -142,6 +142,7 @@ export function MessagesPage() {
   const activeCustomer = activeChatId ? customersById.get(activeChatId) : undefined;
   const activeAnalysis = activeChatId ? analyses[activeChatId] : null;
   const activeAiChat = activeChatId ? aiChats[activeChatId] || [] : [];
+  const hasActiveChat = Boolean(activeChat && activeCustomer);
 
   const handleImportChat = async () => {
     if (!importText.trim()) {
@@ -165,6 +166,25 @@ export function MessagesPage() {
       });
 
       const result = await importWhatsAppChat(parsed);
+      const agentNames = [
+        ...new Set(
+          agentNamesInput
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .concat(whatsAppUserName.trim() ? [whatsAppUserName.trim()] : []),
+        ),
+      ];
+      const saveResult = await saveLocalChatHistory({
+        data: {
+          customerName: parsed.customerName,
+          rawText: importText,
+          agentNames: agentNames.length ? agentNames : undefined,
+        },
+      });
+      if (!saveResult.ok) {
+        toast("Imported chat, but failed to save to local history folder.", "info");
+      }
       setImportOpen(false);
       setImportText("");
       setCustomerNameOverride("");
@@ -357,14 +377,6 @@ export function MessagesPage() {
     }
   };
 
-  if (!activeChat || !activeCustomer) {
-    return (
-      <div className="h-full flex items-center justify-center text-muted-foreground">
-        Select a conversation
-      </div>
-    );
-  }
-
   return (
     <div className="h-full flex">
       {/* Inbox List */}
@@ -429,11 +441,7 @@ export function MessagesPage() {
                     {c.lastMessagePreview}
                   </p>
                   <div className="mt-1.5 flex items-center gap-2">
-                    {c.status === "resolved" ? (
-                      <Badge variant="success">Resolved</Badge>
-                    ) : (
-                      <SLATimer baseMinutes={c.waitingMinutes} compact />
-                    )}
+                    {c.status === "resolved" && <Badge variant="success">Resolved</Badge>}
                   </div>
                 </div>
               </button>
@@ -445,85 +453,96 @@ export function MessagesPage() {
       {/* Chat Window */}
       <div className="flex-1 flex flex-col min-w-0 bg-background">
         <div className="h-14 border-b border-border bg-card px-4 flex items-center gap-3 shrink-0">
-          <div
-            className="h-9 w-9 rounded-full text-white font-bold text-xs flex items-center justify-center"
-            style={{ background: activeCustomer.avatarColor }}
-          >
-            {activeCustomer.initials}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="font-semibold text-sm text-foreground">{activeCustomer.name}</div>
-            <div className="text-xs text-muted-foreground">{activeCustomer.phone}</div>
-          </div>
-          <SLATimer baseMinutes={activeChat.waitingMinutes} />
-          <button
-            onClick={() => setProfileOpen(true)}
-            className="h-8 px-3 rounded-md border border-border text-xs font-medium hover:bg-accent flex items-center gap-1.5"
-          >
-            <User2 className="h-3.5 w-3.5" /> View Profile
-          </button>
-          <button
-            onClick={() => setEscalateOpen(true)}
-            className="h-8 px-3 rounded-md border border-destructive/50 text-destructive text-xs font-medium hover:bg-destructive/5 flex items-center gap-1.5"
-          >
-            <AlertOctagon className="h-3.5 w-3.5" /> Escalate
-          </button>
+          {activeChat && activeCustomer ? (
+            <>
+              <div
+                className="h-9 w-9 rounded-full text-white font-bold text-xs flex items-center justify-center"
+                style={{ background: activeCustomer.avatarColor }}
+              >
+                {activeCustomer.initials}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-sm text-foreground">{activeCustomer.name}</div>
+                <div className="text-xs text-muted-foreground">{activeCustomer.phone}</div>
+              </div>
+              <button
+                onClick={() => setProfileOpen(true)}
+                className="h-8 px-3 rounded-md border border-border text-xs font-medium hover:bg-accent flex items-center gap-1.5"
+              >
+                <User2 className="h-3.5 w-3.5" /> View Profile
+              </button>
+              <button
+                onClick={() => setEscalateOpen(true)}
+                className="h-8 px-3 rounded-md border border-destructive/50 text-destructive text-xs font-medium hover:bg-destructive/5 flex items-center gap-1.5"
+              >
+                <AlertOctagon className="h-3.5 w-3.5" /> Escalate
+              </button>
+            </>
+          ) : (
+            <div className="text-sm text-muted-foreground">No chats yet. Import a chat to begin.</div>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-3">
-          {activeChat.messages.map((m) => {
-            const isAgent = m.from === "agent";
-            return (
-              <div key={m.id} className={cn("flex", isAgent ? "justify-end" : "justify-start")}>
-                <div
-                  className={cn(
-                    "max-w-[65%] rounded-2xl px-3.5 py-2",
-                    isAgent
-                      ? "bg-primary text-primary-foreground rounded-br-md"
-                      : "bg-card border border-border text-foreground rounded-bl-md",
-                  )}
-                >
-                  {m.type === "text" && (
-                    <p className="text-sm whitespace-pre-wrap wrap-break-word">{m.text}</p>
-                  )}
-                  {m.type === "image" && (
-                    <div className="flex items-center gap-2 py-1">
-                      <div className="h-12 w-12 rounded-md bg-muted flex items-center justify-center">
-                        <ImageIcon className="h-5 w-5 text-muted-foreground" />
-                      </div>
-                      <span className="text-xs">{m.filename}</span>
-                    </div>
-                  )}
-                  {m.type === "voice" && (
-                    <div className="flex items-center gap-2 py-1 min-w-35">
-                      <button className="h-7 w-7 rounded-full bg-foreground/10 flex items-center justify-center">
-                        <Play className="h-3.5 w-3.5" />
-                      </button>
-                      <div className="flex-1 flex items-center gap-0.5">
-                        {[3, 5, 7, 4, 6, 8, 5, 3, 5, 7, 4, 6, 3].map((h, i) => (
-                          <span
-                            key={i}
-                            className="w-0.5 rounded-full bg-current opacity-60"
-                            style={{ height: `${h * 1.5}px` }}
-                          />
-                        ))}
-                      </div>
-                      <span className="text-[10px]">{m.duration}</span>
-                      <Mic className="h-3 w-3 opacity-60" />
-                    </div>
-                  )}
+          {activeChat ? (
+            activeChat.messages.map((m) => {
+              const isAgent = m.side ? m.side === "right" : m.from === "agent";
+              return (
+                <div key={m.id} className={cn("flex", isAgent ? "justify-end" : "justify-start")}>
                   <div
                     className={cn(
-                      "text-[10px] mt-1 opacity-70",
-                      isAgent ? "text-right" : "text-left",
+                      "max-w-[65%] rounded-2xl px-3.5 py-2",
+                      isAgent
+                        ? "bg-primary text-primary-foreground rounded-br-md"
+                        : "bg-card border border-border text-foreground rounded-bl-md",
                     )}
                   >
-                    {m.time}
+                    {m.type === "text" && (
+                      <p className="text-sm whitespace-pre-wrap wrap-break-word">{m.text}</p>
+                    )}
+                    {m.type === "image" && (
+                      <div className="flex items-center gap-2 py-1">
+                        <div className="h-12 w-12 rounded-md bg-muted flex items-center justify-center">
+                          <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                        </div>
+                        <span className="text-xs">{m.filename}</span>
+                      </div>
+                    )}
+                    {m.type === "voice" && (
+                      <div className="flex items-center gap-2 py-1 min-w-35">
+                        <button className="h-7 w-7 rounded-full bg-foreground/10 flex items-center justify-center">
+                          <Play className="h-3.5 w-3.5" />
+                        </button>
+                        <div className="flex-1 flex items-center gap-0.5">
+                          {[3, 5, 7, 4, 6, 8, 5, 3, 5, 7, 4, 6, 3].map((h, i) => (
+                            <span
+                              key={i}
+                              className="w-0.5 rounded-full bg-current opacity-60"
+                              style={{ height: `${h * 1.5}px` }}
+                            />
+                          ))}
+                        </div>
+                        <span className="text-[10px]">{m.duration}</span>
+                        <Mic className="h-3 w-3 opacity-60" />
+                      </div>
+                    )}
+                    <div
+                      className={cn(
+                        "text-[10px] mt-1 opacity-70",
+                        isAgent ? "text-right" : "text-left",
+                      )}
+                    >
+                      {m.time}
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          ) : (
+            <div className="h-full flex items-center justify-center text-muted-foreground">
+              No conversations yet. Import a chat to get started.
+            </div>
+          )}
           {showAnalysisBanner && (
             <div className="flex justify-center">
               <div className="text-[11px] text-muted-foreground bg-primary-soft px-3 py-1 rounded-full inline-flex items-center gap-2">
@@ -544,14 +563,16 @@ export function MessagesPage() {
           <div className="flex items-end gap-2">
             <button
               onClick={() => toast("File attached (UI demo)", "info")}
-              className="h-9 w-9 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground flex items-center justify-center"
+              disabled={!hasActiveChat}
+              className="h-9 w-9 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground flex items-center justify-center disabled:opacity-50"
               aria-label="Attach file"
             >
               <Paperclip className="h-4 w-4" />
             </button>
             <button
               onClick={() => toast("Image attached (UI demo)", "info")}
-              className="h-9 w-9 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground flex items-center justify-center"
+              disabled={!hasActiveChat}
+              className="h-9 w-9 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground flex items-center justify-center disabled:opacity-50"
               aria-label="Attach image"
             >
               <ImageIcon className="h-4 w-4" />
@@ -559,18 +580,19 @@ export function MessagesPage() {
             <input
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
+              disabled={!hasActiveChat}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   sendChat();
                 }
               }}
-              placeholder="Type a reply..."
-              className="flex-1 h-10 px-3 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              placeholder={hasActiveChat ? "Type a reply..." : "Select a chat to reply"}
+              className="flex-1 h-10 px-3 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
             />
             <button
               onClick={sendChat}
-              disabled={!chatInput.trim()}
+              disabled={!hasActiveChat || !chatInput.trim()}
               className="h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary-dark disabled:opacity-50 flex items-center gap-1.5"
             >
               <Send className="h-4 w-4" /> Send
@@ -580,7 +602,8 @@ export function MessagesPage() {
                 setActiveTab("analysis");
                 runAnalysis();
               }}
-              className="h-10 px-4 rounded-md bg-primary-soft text-primary-dark dark:text-accent-foreground text-sm font-semibold hover:bg-primary/15 flex items-center gap-1.5"
+              disabled={!hasActiveChat}
+              className="h-10 px-4 rounded-md bg-primary-soft text-primary-dark dark:text-accent-foreground text-sm font-semibold hover:bg-primary/15 disabled:opacity-50 flex items-center gap-1.5"
             >
               <Sparkles className="h-4 w-4" /> Ask AI
             </button>
@@ -610,12 +633,12 @@ export function MessagesPage() {
           )}
         </div>
 
-        {activeTab === "analysis" ? (
-          <AnalysisTab
-            analysis={activeAnalysis}
-            onRun={runAnalysis}
-            loading={analyzing}
-          />
+        {!hasActiveChat ? (
+          <div className="flex-1 flex items-center justify-center p-6 text-sm text-muted-foreground">
+            Import a chat to enable AI features.
+          </div>
+        ) : activeTab === "analysis" ? (
+          <AnalysisTab analysis={activeAnalysis} onRun={runAnalysis} loading={analyzing} />
         ) : activeTab === "actions" ? (
           <ActionsTab
             plan={activeChatId ? actionPlans[activeChatId] || null : null}
@@ -679,44 +702,46 @@ export function MessagesPage() {
         </div>
       </Modal>
 
-      <Modal open={profileOpen} onClose={() => setProfileOpen(false)} title="Customer Profile">
-        <div className="space-y-3">
-          <div className="flex items-center gap-3">
-            <div
-              className="h-12 w-12 rounded-full text-white font-bold flex items-center justify-center"
-              style={{ background: activeCustomer.avatarColor }}
-            >
-              {activeCustomer.initials}
+      {activeCustomer && (
+        <Modal open={profileOpen} onClose={() => setProfileOpen(false)} title="Customer Profile">
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <div
+                className="h-12 w-12 rounded-full text-white font-bold flex items-center justify-center"
+                style={{ background: activeCustomer.avatarColor }}
+              >
+                {activeCustomer.initials}
+              </div>
+              <div>
+                <div className="font-semibold text-foreground">{activeCustomer.name}</div>
+                <div className="text-xs text-muted-foreground">
+                  {activeCustomer.phone} · Loyal since {activeCustomer.loyalSince}
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="p-2 bg-secondary rounded-md">
+                <div className="text-lg font-bold text-foreground">{activeCustomer.totalOrders}</div>
+                <div className="text-[10px] text-muted-foreground uppercase">Orders</div>
+              </div>
+              <div className="p-2 bg-secondary rounded-md">
+                <div className="text-lg font-bold text-foreground">RM{activeCustomer.totalSpent}</div>
+                <div className="text-[10px] text-muted-foreground uppercase">Lifetime</div>
+              </div>
+              <div className="p-2 bg-secondary rounded-md">
+                <div className="text-lg font-bold text-foreground">
+                  RM{activeCustomer.avgOrderValue}
+                </div>
+                <div className="text-[10px] text-muted-foreground uppercase">Avg Order</div>
+              </div>
             </div>
             <div>
-              <div className="font-semibold text-foreground">{activeCustomer.name}</div>
-              <div className="text-xs text-muted-foreground">
-                {activeCustomer.phone} · Loyal since {activeCustomer.loyalSince}
-              </div>
+              <div className="text-xs font-semibold text-foreground mb-1">AI behavior summary</div>
+              <p className="text-xs text-muted-foreground">{activeCustomer.behaviorSummary}</p>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-2 text-center">
-            <div className="p-2 bg-secondary rounded-md">
-              <div className="text-lg font-bold text-foreground">{activeCustomer.totalOrders}</div>
-              <div className="text-[10px] text-muted-foreground uppercase">Orders</div>
-            </div>
-            <div className="p-2 bg-secondary rounded-md">
-              <div className="text-lg font-bold text-foreground">RM{activeCustomer.totalSpent}</div>
-              <div className="text-[10px] text-muted-foreground uppercase">Lifetime</div>
-            </div>
-            <div className="p-2 bg-secondary rounded-md">
-              <div className="text-lg font-bold text-foreground">
-                RM{activeCustomer.avgOrderValue}
-              </div>
-              <div className="text-[10px] text-muted-foreground uppercase">Avg Order</div>
-            </div>
-          </div>
-          <div>
-            <div className="text-xs font-semibold text-foreground mb-1">AI behavior summary</div>
-            <p className="text-xs text-muted-foreground">{activeCustomer.behaviorSummary}</p>
-          </div>
-        </div>
-      </Modal>
+        </Modal>
+      )}
 
       <Modal
         open={importOpen}

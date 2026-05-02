@@ -1,12 +1,14 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { mockChats, type ChatThread, type ChatMessage } from "@/data/mockChats";
+import type { ChatThread, ChatMessage } from "@/data/mockChats";
 import { mockOrders, type Order } from "@/data/mockOrders";
 import { mockMeetings, type Meeting } from "@/data/mockMeetings";
 import { listPersistedChats, upsertPersistedChat } from "@/server/chat.functions";
+import { listLocalChatHistories } from "@/server/chatFiles.functions";
 import {
   avatarColorFromSeed,
   makeCustomerId,
   makeInitials,
+  parseWhatsAppExport,
   type ParsedWhatsAppChat,
 } from "@/utils/parseWhatsAppExport";
 
@@ -61,6 +63,7 @@ type AppCtx = {
   // orders
   orders: Order[];
   createOrder: (input: {
+    orderId?: string;
     customerId: string;
     customerName: string;
     items: string;
@@ -105,12 +108,37 @@ function sortChats(chats: ChatThread[]): ChatThread[] {
   });
 }
 
+function buildThreadFromParsed(parsed: ParsedWhatsAppChat): ChatThread {
+  const customerId = makeCustomerId(parsed.customerName);
+  const initials = makeInitials(parsed.customerName);
+  const avatarColor = avatarColorFromSeed(parsed.customerName);
+  const last = parsed.messages[parsed.messages.length - 1];
+  const now = Date.now();
+  const waitingMinutes =
+    last?.from === "customer" ? Math.max(0, Math.floor((now - last.timestamp) / 60000)) : 0;
+
+  return {
+    customerId,
+    customerName: parsed.customerName,
+    customerPhone: parsed.customerPhone,
+    customerAvatarColor: avatarColor,
+    customerInitials: initials,
+    source: "whatsapp-import",
+    flagged: waitingMinutes >= 15 ? "critical" : waitingMinutes >= 5 ? "warning" : null,
+    unread: 0,
+    status: "open",
+    waitingMinutes,
+    lastMessagePreview: last?.text || "Imported WhatsApp chat",
+    messages: parsed.messages,
+  };
+}
+
 export function AppProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [business, setBusiness] = useState(BUSINESSES[0]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [chats, setChats] = useState<ChatThread[]>(mockChats);
-  const [activeChatId, setActiveChatId] = useState<string | null>("c1");
+  const [chats, setChats] = useState<ChatThread[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [orders, setOrders] = useState<Order[]>(mockOrders);
   const [meetings, setMeetings] = useState<Meeting[]>(mockMeetings);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
@@ -197,23 +225,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const loadPersistedChats = async () => {
       try {
-        const result = await listPersistedChats();
-        if (cancelled || !result.chats.length) return;
+        const [localResult, supabaseResult] = await Promise.allSettled([
+          listLocalChatHistories(),
+          listPersistedChats(),
+        ]);
+
+        const localThreads: ChatThread[] = [];
+        if (localResult.status === "fulfilled" && localResult.value.ok) {
+          for (const file of localResult.value.files) {
+            try {
+              const nameFromFile = file.fileName.replace(/\.txt$/i, "").trim();
+              const parsed = parseWhatsAppExport(file.content, {
+                customerNameOverride:
+                  file.meta?.customerName?.trim() || nameFromFile || undefined,
+                agentNames: file.meta?.agentNames,
+              });
+              localThreads.push(buildThreadFromParsed(parsed));
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : String(err);
+              console.debug("Local chat parse skipped:", msg);
+            }
+          }
+        }
+
+        const supabaseThreads: ChatThread[] =
+          supabaseResult.status === "fulfilled" ? supabaseResult.value.chats : [];
+
+        if (cancelled || (!localThreads.length && !supabaseThreads.length)) return;
 
         setChats((prev) => {
           const map = new Map(prev.map((c) => [c.customerId, c]));
-          for (const chat of result.chats) {
+          for (const chat of localThreads) {
+            map.set(chat.customerId, chat);
+          }
+          for (const chat of supabaseThreads) {
             map.set(chat.customerId, { ...chat, source: chat.source || "supabase" });
           }
           return sortChats(Array.from(map.values()));
         });
 
         if (!activeChatId) {
-          setActiveChatId(result.chats[0]?.customerId || null);
+          const first = localThreads[0] || supabaseThreads[0];
+          setActiveChatId(first?.customerId || null);
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.debug("Supabase load skipped:", msg);
+        console.debug("Persisted chat load skipped:", msg);
       }
     };
 
@@ -229,6 +286,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const toggleTheme = () => setTheme((t) => (t === "light" ? "dark" : "light"));
 
   const createOrder = (input: {
+    orderId?: string;
     customerId: string;
     customerName: string;
     items: string;
@@ -243,7 +301,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
 
     const order: Order = {
-      id: `ORD-${Date.now().toString().slice(-6)}`,
+      id: input.orderId?.trim() || `ORD-${Date.now().toString().slice(-6)}`,
       customerId: input.customerId,
       customerName: input.customerName,
       items: input.items,
@@ -304,6 +362,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const msg: ChatMessage = {
       id: `a${Date.now()}`,
       from: "agent",
+      side: "right",
       type: "text",
       text,
       time,
@@ -336,29 +395,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const importWhatsAppChat = async (parsed: ParsedWhatsAppChat) => {
-    const customerId = makeCustomerId(parsed.customerName);
-    const initials = makeInitials(parsed.customerName);
-    const avatarColor = avatarColorFromSeed(parsed.customerName);
-    const last = parsed.messages[parsed.messages.length - 1];
-    const now = Date.now();
-    const waitingMinutes =
-      last?.from === "customer" ? Math.max(0, Math.floor((now - last.timestamp) / 60000)) : 0;
-
-    const thread: ChatThread = {
-      customerId,
-      customerName: parsed.customerName,
-      customerPhone: parsed.customerPhone,
-      customerAvatarColor: avatarColor,
-      customerInitials: initials,
-      source: "whatsapp-import",
-      flagged: waitingMinutes >= 15 ? "critical" : waitingMinutes >= 5 ? "warning" : null,
-      unread: 0,
-      status: "open",
-      waitingMinutes,
-      lastMessagePreview: last?.text || "Imported WhatsApp chat",
-      messages: parsed.messages,
-    };
-
+    const thread = buildThreadFromParsed(parsed);
+    const customerId = thread.customerId;
     setChats((prev) => sortChats([thread, ...prev]));
     setActiveChatId(customerId);
     persistThread(thread);
