@@ -22,7 +22,7 @@ import { mockMeetings } from "@/data/mockMeetings";
 import { formatChatForAI, buildContextBlock } from "@/utils/formatChat";
 import type { Order } from "@/data/mockOrders";
 import type { Meeting } from "@/data/mockMeetings";
-import { readActionFile } from "@/server/actionFiles.functions";
+import { readActionFile, setActionItemStatus } from "@/server/actionFiles.functions";
 import { parseWhatsAppExport } from "@/utils/parseWhatsAppExport";
 import { Badge } from "@/components/shared/Badge";
 import { Modal, toast } from "@/components/shared/Toast";
@@ -616,6 +616,7 @@ export function MessagesPage() {
                 chatExcerpt: o.chatExcerpt,
               });
               setActionOrders((prev) => prev.filter((x) => x.id !== o.id));
+              void setActionItemStatus({ data: { customerName: activeCustomer?.name || "Unknown", itemId: o.id, status: "approved" } });
               toast(`Approved order`, "success");
             }}
             onApproveMeeting={(m) => {
@@ -628,10 +629,17 @@ export function MessagesPage() {
                 purpose: m.purpose,
               });
               setActionMeetings((prev) => prev.filter((x) => x.id !== m.id));
+              void setActionItemStatus({ data: { customerName: activeCustomer?.name || "Unknown", itemId: m.id, status: "approved" } });
               toast(`Approved meeting`, "success");
             }}
-            onRejectOrder={(o) => setActionOrders((prev) => prev.filter((x) => x.id !== o.id))}
-            onRejectMeeting={(m) => setActionMeetings((prev) => prev.filter((x) => x.id !== m.id))}
+            onRejectOrder={(o) => {
+              setActionOrders((prev) => prev.filter((x) => x.id !== o.id));
+              void setActionItemStatus({ data: { customerName: activeCustomer?.name || "Unknown", itemId: o.id, status: "rejected" } });
+            }}
+            onRejectMeeting={(m) => {
+              setActionMeetings((prev) => prev.filter((x) => x.id !== m.id));
+              void setActionItemStatus({ data: { customerName: activeCustomer?.name || "Unknown", itemId: m.id, status: "rejected" } });
+            }}
           />
         ) : (
           <AiChatTab
