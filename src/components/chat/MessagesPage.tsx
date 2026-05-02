@@ -321,7 +321,7 @@ export function MessagesPage() {
     }
     analysisBannerTimerRef.current = setTimeout(() => setShowAnalysisBanner(false), 5000);
     const formatted = formatChatForAI(activeChat.messages, activeCustomer);
-    const result = await analyze(formatted, ctxBlock);
+    const result = await analyze(formatted, ctxBlock, activeChatId);
     setAnalyzing(false);
     if (result) {
       setAnalyses((prev) => ({ ...prev, [activeChatId]: result }));

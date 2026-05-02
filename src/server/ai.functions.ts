@@ -1,9 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { parseChatActionPlan, type ChatActionPlan } from "@/utils/chatActions";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 const DEFAULT_MODEL = "gemini-2.5-flash";
+const ANALYSIS_CACHE_PATH = "E:\\TempDataUMHACK\\result.txt";
 
 const messageSchema = z.object({
   role: z.enum(["user", "assistant"]),
@@ -57,6 +60,28 @@ function extractGeminiText(payload: unknown): string {
     })
     .join("\n")
     .trim();
+}
+
+async function readAnalysisCache(): Promise<Record<string, string>> {
+  try {
+    const raw = await fs.readFile(ANALYSIS_CACHE_PATH, "utf-8");
+    if (!raw.trim()) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const cache: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === "string") cache[key] = value;
+    }
+    return cache;
+  } catch (err: unknown) {
+    const code = err && typeof err === "object" ? (err as { code?: string }).code : undefined;
+    if (code === "ENOENT") return {};
+    return {};
+  }
+}
+
+async function writeAnalysisCache(cache: Record<string, string>): Promise<void> {
+  await fs.mkdir(path.dirname(ANALYSIS_CACHE_PATH), { recursive: true });
+  await fs.writeFile(ANALYSIS_CACHE_PATH, JSON.stringify(cache, null, 2), "utf-8");
 }
 
 async function callGeminiChat(opts: {
@@ -134,10 +159,20 @@ export const analyzeConversation = createServerFn({ method: "POST" })
       model: z.string().min(1),
       formattedConversation: z.string().min(1),
       contextBlock: z.string().optional().default(""),
+      chatId: z.string().optional(),
     }),
   )
   .handler(async ({ data }): Promise<string> => {
     const apiKey = requireApiKey(data.apiKey);
+    const chatId = data.chatId?.trim();
+
+    if (chatId) {
+      const cache = await readAnalysisCache();
+      const cached = cache[chatId];
+      if (cached?.trim()) {
+        return cached;
+      }
+    }
 
     const userText = [
       "Adjusted Prompt",
@@ -207,6 +242,16 @@ export const analyzeConversation = createServerFn({ method: "POST" })
 
     if (!raw.trim()) {
       throw new Error("Model returned an empty analysis. Try again or adjust model.");
+    }
+
+    if (chatId) {
+      try {
+        const cache = await readAnalysisCache();
+        cache[chatId] = raw.trim();
+        await writeAnalysisCache(cache);
+      } catch (err: unknown) {
+        console.debug("Failed to write analysis cache:", err);
+      }
     }
 
     return raw;

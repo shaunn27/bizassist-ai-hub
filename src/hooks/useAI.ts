@@ -46,7 +46,11 @@ export function useAI() {
   const resolveModel = useCallback(() => settings.model?.trim() || DEFAULT_MODEL, [settings.model]);
 
   const analyze = useCallback(
-    async (formattedConversation: string, contextBlock = ""): Promise<string | null> => {
+    async (
+      formattedConversation: string,
+      contextBlock = "",
+      chatId?: string,
+    ): Promise<string | null> => {
       setLoading(true);
       setError(null);
       try {
@@ -56,6 +60,7 @@ export function useAI() {
             model: resolveModel(),
             formattedConversation,
             contextBlock,
+            chatId,
           },
         });
       } catch (e: unknown) {
