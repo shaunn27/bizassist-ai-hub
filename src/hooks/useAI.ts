@@ -6,6 +6,7 @@ import {
   chatWithAiAssistant,
   generateChatActionPlan,
   testGeminiConnection,
+  generateChatOrdersMeetings,
 } from "@/server/ai.functions";
 
 const DEFAULT_MODEL = "gemini-2.5-flash";
@@ -126,6 +127,33 @@ export function useAI() {
     [resolveApiKey, resolveModel],
   );
 
+  const generateOrdersMeetings = useCallback(
+    async (customerName: string): Promise<{ ok: boolean; filePath?: string; error?: string }> => {
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await generateChatOrdersMeetings({
+          data: {
+            apiKey: resolveApiKey(),
+            model: resolveModel(),
+            customerName,
+          },
+        });
+        if (!result.ok && result.error) {
+          setError(result.error);
+        }
+        return result;
+      } catch (e: unknown) {
+        const error = e instanceof Error ? e : new Error(String(e));
+        setError(error.message);
+        return { ok: false, error: error.message };
+      } finally {
+        setLoading(false);
+      }
+    },
+    [resolveApiKey, resolveModel],
+  );
+
   const testConnection = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -145,5 +173,5 @@ export function useAI() {
     }
   }, [resolveApiKey, resolveModel]);
 
-  return { analyze, chatWithAI, proposeActions, testConnection, loading, error };
+  return { analyze, chatWithAI, proposeActions, generateOrdersMeetings, testConnection, loading, error };
 }

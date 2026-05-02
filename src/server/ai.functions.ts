@@ -271,11 +271,11 @@ export const chatWithAiAssistant = createServerFn({ method: "POST" })
 
     const bootstrap = data.contextBlock.trim()
       ? [
-          {
-            role: "user" as const,
-            content: `Use this context when assisting the support agent.\n\n${data.contextBlock}`,
-          },
-        ]
+        {
+          role: "user" as const,
+          content: `Use this context when assisting the support agent.\n\n${data.contextBlock}`,
+        },
+      ]
       : [];
 
     const reply = await callGeminiChat({
@@ -292,6 +292,121 @@ export const chatWithAiAssistant = createServerFn({ method: "POST" })
     }
 
     return { reply };
+  });
+
+export const generateChatOrdersMeetings = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      apiKey: z.string().optional().default(""),
+      model: z.string().min(1),
+      customerName: z.string().min(1),
+    }),
+  )
+  .handler(async ({ data }): Promise<{ ok: boolean; filePath?: string; error?: string }> => {
+    const apiKey = requireApiKey(data.apiKey);
+    const CHAT_HISTORY_DIR = "E:\\bizassist-data";
+    const CHAT_ANALYSIS_DIR = "E:\\bizassist-data-responce";
+    const ACTION_OUTPUT_DIR = "E:\\bizzasist-data-action";
+
+    function sanitize(name: string): string {
+      return name.trim().replace(/[<>:"/\\|?*]+/g, "-").replace(/\s+/g, " ").slice(0, 120) || "chat";
+    }
+
+    const safeName = sanitize(data.customerName);
+
+    // Read chat history file
+    let chatHistory = "";
+    try {
+      const historyPath = path.join(CHAT_HISTORY_DIR, `${safeName}.txt`);
+      chatHistory = await fs.readFile(historyPath, "utf-8");
+      // Strip BizAssistMeta line if present
+      const lines = chatHistory.split(/\r?\n/);
+      if (lines[0]?.startsWith("## BizAssistMeta:")) {
+        chatHistory = lines.slice(1).join("\n");
+      }
+    } catch {
+      chatHistory = "";
+    }
+
+    // Read analysis / response file
+    let analysisText = "";
+    try {
+      const analysisPath = path.join(CHAT_ANALYSIS_DIR, `${safeName}.txt`);
+      analysisText = await fs.readFile(analysisPath, "utf-8");
+    } catch {
+      analysisText = "";
+    }
+
+    const combinedChat = [
+      chatHistory.trim() ? chatHistory.trim() : "(No chat history found)",
+      analysisText.trim() ? `\n\n--- Previous AI Analysis ---\n${analysisText.trim()}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    const prompt = [
+      "You are given a chat history between a customer and an agent. Extract all orders and meetings discussed.",
+      "Output them in the following **plain text format** – do NOT use JSON, markdown, or tables.",
+      "",
+      "For each order, output exactly:",
+      "",
+      "--- ORDER ---",
+      "id: [generate a unique ID like ORD-xxxx]",
+      "customerId: [use \"c1\", \"c2\", etc. or generate consistently]",
+      `customerName: [customer name from chat, use "${data.customerName}" if not found]`,
+      "items: [quantity x description, e.g., \"2x Premium Chocolate\"]",
+      "total: [number or \"unknown\"]",
+      "source: [WhatsApp | Telegram | SMS | etc.]",
+      "receivedAt: [time or relative like \"09:42 AM\" or \"Yesterday\"]",
+      "status: [Pending | Confirmed | Processing | Delivered | Canceled]",
+      "chatExcerpt: [brief quote from customer about this order]",
+      "timeline: [Created:time:done, Confirmed:time:done, Processing:time:done, Delivered:time:done]",
+      "--- END ---",
+      "",
+      "For each meeting, output exactly:",
+      "",
+      "--- MEETING ---",
+      "id: [generate like mt1, mt2]",
+      "customerId: [same as order customerId if known, else generate]",
+      "customerName: [name]",
+      "date: [YYYY-MM-DD or relative like \"Tomorrow\"]",
+      "time: [HH:MM AM/PM]",
+      "duration: [e.g., \"30 min\"]",
+      "purpose: [short description]",
+      "status: [Pending Confirm | Scheduled | Done | Cancelled]",
+      "--- END ---",
+      "",
+      "Rules:",
+      "- Use the chat history only. If a field is not mentioned, use \"Not specified\" or a reasonable default.",
+      "- For timeline, each field is \"label:time:done\" where \"label\" is exactly Created, Confirmed, Processing, Delivered. Use \"—\" for time if not done, and \"false\" for done status (or \"true\").",
+      "- For dates, convert relative terms like \"tomorrow\" to actual date if chat timestamp is given, otherwise keep as \"Tomorrow\".",
+      "- Output all orders first, then all meetings. Separate each block with a blank line.",
+      "",
+      "Chat history:",
+      combinedChat,
+    ].join("\n");
+
+    const raw = await callGeminiChat({
+      apiKey,
+      model: data.model,
+      messages: [{ role: "user", content: prompt }],
+      maxTokens: 4096,
+    });
+
+    if (!raw.trim()) {
+      return { ok: false, error: "AI returned empty output." };
+    }
+
+    // Save to action output folder
+    try {
+      await fs.mkdir(ACTION_OUTPUT_DIR, { recursive: true });
+      const outPath = path.join(ACTION_OUTPUT_DIR, `${safeName}.txt`);
+      await fs.writeFile(outPath, raw.trim(), "utf-8");
+      return { ok: true, filePath: outPath };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: `AI output generated but failed to save: ${message}` };
+    }
   });
 
 export const generateChatActionPlan = createServerFn({ method: "POST" })
